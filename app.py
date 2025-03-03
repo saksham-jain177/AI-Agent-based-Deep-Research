@@ -8,6 +8,11 @@ from reportlab.lib.enums import TA_LEFT
 import io
 import requests
 import datetime
+import logging
+import re
+
+# Set up logging
+logging.basicConfig(filename="research_agent.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Inject custom CSS for improved readability and aesthetics
 st.markdown("""
@@ -373,8 +378,19 @@ def check_openrouter_status():
     try:
         response = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
         return response.status_code == 200
-    except:
+    except Exception as e:
+        logging.error(f"Failed to check OpenRouter status: {str(e)}")
         return False
+
+# Function to add page numbers to the PDF
+def on_page(canvas, doc):
+    page_num = canvas.getPageNumber()
+    text = f"Page {page_num}"
+    canvas.saveState()
+    canvas.setFont('Helvetica', 8)
+    canvas.setFillColor(colors.grey)
+    canvas.drawRightString(doc.rightMargin + doc.width, doc.bottomMargin - 10, text)
+    canvas.restoreState()
 
 # Streamlit app setup
 st.title("Deep Research AI Agent")
@@ -399,31 +415,57 @@ deep_research = st.checkbox("Deep Research Mode", value=False, help="Enable for 
 
 # Research button logic
 if st.button("Run Research"):
-    if not check_openrouter_status():
+    if not query.strip():
+        st.error("Please enter a valid research query.")
+    elif not check_openrouter_status():
         st.error("OpenRouter is currently down. Please try again later.")
     else:
-        with st.spinner("Fetching data and drafting response..."):
-            progress_bar = st.progress(0)  # Progress indicator
-            try:
-                # Use the LangGraph workflow from main.py
+        try:
+            with st.spinner("Processing your request..."):
+                # Initialize progress bar and status
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                # Step 1: Fetch research data
+                status_text.text("Step 1/3: Fetching research data... 🔍")
+                logging.info(f"Starting research for query: {query}, deep_research: {deep_research}")
                 research_data, response = run_research(query, deep_research=deep_research)
-                progress_bar.progress(100)  # Complete progress
+                progress_bar.progress(33)
 
-                st.write("### Research Data")
-                st.json(research_data)
-
+                # Step 2: Drafting response
+                status_text.text("Step 2/3: Drafting response... ✍️")
                 if "Error drafting response" in response:
                     st.error(response)
+                    logging.error(f"Failed to draft response: {response}")
                 else:
-                    st.success("Research completed!", icon="✅")
-                    st.subheader("Structured Summary")
+                    progress_bar.progress(66)
+
+                    # Step 3: Generating PDF
+                    status_text.text("Step 3/3: Generating PDF report... 📄")
+                    st.success("Research completed! 🎉", icon="✅")
+                    st.subheader("Structured Summary 📝")
                     st.markdown(response)
+
+                    # Calculate word count and page estimate
+                    word_count = len(response.split())
+                    page_estimate = word_count // 400 + 1  # Rough estimate: ~400 words per page
+                    st.info(f"Summary contains {word_count} words, estimated at {page_estimate} pages.")
+
+                    st.write("### Research Data 📚")
+                    st.json(research_data)
 
                     # Function to generate PDF with proper formatting
                     def generate_pdf(query, data, summary, deep_research=False):
                         """Generate a PDF report with query, data, and summary in a research paper format."""
                         buffer = io.BytesIO()
-                        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=72, bottomMargin=72, leftMargin=72, rightMargin=72)
+                        doc = SimpleDocTemplate(
+                            buffer,
+                            pagesize=letter,
+                            topMargin=72,
+                            bottomMargin=72,
+                            leftMargin=72,
+                            rightMargin=72
+                        )
                         styles = getSampleStyleSheet()
 
                         # Customize styles for a research paper look
@@ -445,7 +487,7 @@ if st.button("Run Research"):
                             leading=12,
                             firstLineIndent=-18,
                             leftIndent=18,
-                            textColor=colors.blue  # Blue color for hyperlinks
+                            textColor=colors.blue
                         )
 
                         # Define a bold style for headings
@@ -475,7 +517,7 @@ if st.button("Run Research"):
                         story.append(Spacer(1, 12))
 
                         # Metadata
-                        story.append(Paragraph("Author: [DeepResearch Agent]", styles['Normal']))
+                        story.append(Paragraph("Author: [Your Name]", styles['Normal']))
                         story.append(Paragraph(f"Date: {datetime.date.today().strftime('%B %d, %Y')}", styles['Normal']))
                         story.append(Spacer(1, 12))
 
@@ -531,10 +573,12 @@ if st.button("Run Research"):
                                         story.append(Paragraph(subheading_text, subheading_style))
                                         story.append(Spacer(1, 6))
                                     else:
-                                        # Remove any lingering Markdown bold (**) within content
-                                        if section.startswith("*") and section.endswith("*"):
-                                            section = section.strip("*")
-                                        story.append(Paragraph(section, styles['BodyText']))
+                                        # Handle inline Markdown bold (**...**) within the content
+                                        # Replace **text** with <b>text</b> for reportlab
+                                        formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
+                                        # Remove any lingering Markdown bold that might remain unmatched
+                                        formatted_text = formatted_text.replace("**", "")
+                                        story.append(Paragraph(formatted_text, styles['BodyText']))
                                         story.append(Spacer(1, 12))
                                 else:
                                     # Handle References section separately
@@ -547,11 +591,9 @@ if st.button("Run Research"):
                                             ref_line = ref_line.strip()
                                             if ref_line:
                                                 # Extract the URL (after the number and dot, e.g., "1. https://...")
-                                                # Split on the first space after the number
                                                 parts = ref_line.split(" ", 1)
                                                 if len(parts) > 1:
                                                     url = parts[1].strip()
-                                                    # Create a clickable hyperlink
                                                     link_text = f'<link href="{url}" color="blue">{ref_line}</link>'
                                                     story.append(Paragraph(link_text, reference_style))
                                                     story.append(Spacer(1, 6))
@@ -559,33 +601,50 @@ if st.button("Run Research"):
                                                     story.append(Paragraph(ref_line, reference_style))
                                                     story.append(Spacer(1, 6))
                                     else:
-                                        # Remove any Markdown bold in content
-                                        if section.startswith("*") and section.endswith("*"):
-                                            section = section.strip("*")
-                                        story.append(Paragraph(section, styles['BodyText']))
+                                        # Handle inline Markdown bold in content
+                                        formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
+                                        formatted_text = formatted_text.replace("**", "")
+                                        story.append(Paragraph(formatted_text, styles['BodyText']))
                                         story.append(Spacer(1, 12))
 
-                        doc.build(story)
+                        doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
                         buffer.seek(0)
                         return buffer
 
-                    # Offer PDF download
+                    # Generate PDF
                     pdf_buffer = generate_pdf(query, research_data, response, deep_research=deep_research)
+                    word_count = len(response.split())
+                    page_estimate = word_count // 400 + 1  # Rough estimate: ~400 words per page
+                    progress_bar.progress(100)
+                    status_text.text(f"Done! Generated a {word_count}-word summary, estimated at {page_estimate} pages. 📊")
+
+                    # Offer PDF download
                     st.download_button(
-                        label="Download PDF Report",
+                        label=f"Download PDF Report ({page_estimate} pages) 📄",
                         data=pdf_buffer,
                         file_name="research_report.pdf",
                         mime="application/pdf"
                     )
-            except Exception as e:
-                st.error(f"Failed after retries: {str(e)}")
-            finally:
-                progress_bar.empty()  # Clear progress bar
+
+                    # Offer text download
+                    st.download_button(
+                        label="Download Summary as Text 📝",
+                        data=response,
+                        file_name="research_summary.txt",
+                        mime="text/plain"
+                    )
+
+        except Exception as e:
+            st.error(f"Failed after retries: {str(e)}")
+            logging.error(f"Failed to process query '{query}': {str(e)}")
+        finally:
+            progress_bar.empty()  # Clear progress bar
+            status_text.empty()  # Clear status text
 
 # Feedback form in sidebar
 st.sidebar.header("Feedback")
 feedback = st.sidebar.text_area("How can we improve? (Optional)")
 if st.sidebar.button("Submit Feedback"):
-    st.sidebar.success("Thanks for your feedback!")    
+    st.sidebar.success("Thanks for your feedback! 🙏")
     with open("feedback.txt", "a") as f:
         f.write(f"{feedback}\n")
