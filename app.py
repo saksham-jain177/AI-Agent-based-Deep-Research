@@ -1,12 +1,13 @@
 import streamlit as st
-from research_agent import research_tool
-from draft_agent import draft_answer
+from main import run_research  # Import run_research from main.py
 from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT
 import io
 import requests
-from tenacity import retry, stop_after_attempt, wait_fixed
+import datetime
 
 # Inject custom CSS for improved readability and aesthetics
 st.markdown("""
@@ -375,17 +376,6 @@ def check_openrouter_status():
     except:
         return False
 
-# Retry logic for API calls
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-def run_research_with_retry(query):
-    """Run research with retries on failure."""
-    return research_tool.run(query)
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-def draft_answer_with_retry(data):
-    """Draft answer with retries on failure."""
-    return draft_answer(data)
-
 # Streamlit app setup
 st.title("Deep Research AI Agent")
 st.write("Enter a query to research and get a detailed response using Tavily and OpenRouter.")
@@ -398,11 +388,14 @@ else:
     st.sidebar.error("Down", icon="❌")
 
 st.sidebar.header("About")
-st.sidebar.write("Dual-agent system using Tavily for research and OpenRouter for drafting with the qwen/qwen-vl-plus:free model.")
+st.sidebar.write("Dual-agent system using Tavily for research and OpenRouter for drafting with the cognitivecomputations/dolphin3.0-r1-mistral-24b:free model.")
 st.sidebar.write("Built with LangChain, LangGraph, and Streamlit.")
 
-# User input
+# User input with Deep Research toggle
 query = st.text_input("Research Query", "Latest advancements in quantum computing")
+
+# Add the Deep Research toggle button below the query input
+deep_research = st.checkbox("Deep Research Mode", value=False, help="Enable for a detailed, research-paper-style summary (5-6+ pages).")
 
 # Research button logic
 if st.button("Run Research"):
@@ -412,74 +405,178 @@ if st.button("Run Research"):
         with st.spinner("Fetching data and drafting response..."):
             progress_bar = st.progress(0)  # Progress indicator
             try:
-                # Research phase
-                research_data = run_research_with_retry(query)
-                progress_bar.progress(50)  # Update progress
+                # Use the LangGraph workflow from main.py
+                research_data, response = run_research(query, deep_research=deep_research)
+                progress_bar.progress(100)  # Complete progress
 
-                if isinstance(research_data, dict) and "error" in research_data:
-                    st.error(f"Research failed: {research_data['error']}")
+                st.write("### Research Data")
+                st.json(research_data)
+
+                if "Error drafting response" in response:
+                    st.error(response)
                 else:
-                    st.write("### Research Data")
-                    st.json(research_data)
+                    st.success("Research completed!", icon="✅")
+                    st.subheader("Structured Summary")
+                    st.markdown(response)
 
-                    # Drafting phase
-                    response = draft_answer_with_retry(research_data)
-                    progress_bar.progress(100)  # Complete progress
+                    # Function to generate PDF with proper formatting
+                    def generate_pdf(query, data, summary, deep_research=False):
+                        """Generate a PDF report with query, data, and summary in a research paper format."""
+                        buffer = io.BytesIO()
+                        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=72, bottomMargin=72, leftMargin=72, rightMargin=72)
+                        styles = getSampleStyleSheet()
 
-                    if "Error drafting response" in response:
-                        st.error(response)
-                    else:
-                        st.success("Research completed!", icon="✅")
-                        st.subheader("Structured Summary")
-                        st.write(response)
+                        # Customize styles for a research paper look
+                        styles['Title'].fontSize = 16
+                        styles['Title'].spaceAfter = 12
+                        styles['Heading2'].fontSize = 14
+                        styles['Heading2'].spaceAfter = 6
+                        styles['Heading3'].fontSize = 12
+                        styles['Heading3'].spaceAfter = 6
+                        styles['BodyText'].fontSize = 10
+                        styles['BodyText'].leading = 14
+                        styles['BodyText'].spaceAfter = 12
 
-                        # Function to generate PDF
-                        def generate_pdf(query, data, summary):
-                            """Generate a PDF report with query, data, and summary."""
-                            buffer = io.BytesIO()
-                            doc = SimpleDocTemplate(buffer, pagesize=letter)
-                            styles = getSampleStyleSheet()
-                            story = []
-
-                            # Title
-                            story.append(Paragraph("Research Report", styles['Title']))
-                            story.append(Spacer(1, 12))
-
-                            # OpenRouter Status
-                            status = "Operational" if check_openrouter_status() else "Down"
-                            story.append(Paragraph(f"OpenRouter Status: {status}", styles['Normal']))
-                            story.append(Spacer(1, 12))
-
-                            # Query
-                            story.append(Paragraph(f"Query: {query}", styles['Heading2']))
-                            story.append(Spacer(1, 12))
-
-                            # Research Data
-                            story.append(Paragraph("Research Data:", styles['Heading3']))
-                            for item in data:
-                                content = f"- {item['title']}: {item['content']}"
-                                story.append(Paragraph(content, styles['BodyText']))
-                            story.append(Spacer(1, 12))
-
-                            # Summary
-                            story.append(Paragraph("Summary:", styles['Heading3']))
-                            summary_paragraphs = summary.split("\n\n")
-                            for para in summary_paragraphs:
-                                story.append(Paragraph(para, styles['BodyText']))
-                                story.append(Spacer(1, 12))
-
-                            doc.build(story)
-                            buffer.seek(0)
-                            return buffer
-
-                        # Offer PDF download
-                        pdf_buffer = generate_pdf(query, research_data, response)
-                        st.download_button(
-                            label="Download PDF Report",
-                            data=pdf_buffer,
-                            file_name="research_report.pdf",
-                            mime="application/pdf"
+                        # Define a style for references (smaller font, hanging indent, blue hyperlinks)
+                        reference_style = ParagraphStyle(
+                            name='Reference',
+                            parent=styles['BodyText'],
+                            fontSize=9,
+                            leading=12,
+                            firstLineIndent=-18,
+                            leftIndent=18,
+                            textColor=colors.blue  # Blue color for hyperlinks
                         )
+
+                        # Define a bold style for headings
+                        heading_style = ParagraphStyle(
+                            name='HeadingBold',
+                            parent=styles['Heading2'],
+                            fontName='Helvetica-Bold',
+                            fontSize=14,
+                            textColor=colors.black,
+                            spaceAfter=6
+                        )
+
+                        # Define a style for subheadings (bold, slightly smaller than main headings)
+                        subheading_style = ParagraphStyle(
+                            name='SubheadingBold',
+                            parent=styles['Heading3'],
+                            fontName='Helvetica-Bold',
+                            fontSize=12,
+                            textColor=colors.black,
+                            spaceAfter=6
+                        )
+
+                        story = []
+
+                        # Title
+                        story.append(Paragraph("Research Report", styles['Title']))
+                        story.append(Spacer(1, 12))
+
+                        # Metadata
+                        story.append(Paragraph("Author: [DeepResearch Agent]", styles['Normal']))
+                        story.append(Paragraph(f"Date: {datetime.date.today().strftime('%B %d, %Y')}", styles['Normal']))
+                        story.append(Spacer(1, 12))
+
+                        # OpenRouter Status
+                        status = "Operational" if check_openrouter_status() else "Down"
+                        story.append(Paragraph(f"OpenRouter Status: {status}", styles['Normal']))
+                        story.append(Spacer(1, 12))
+
+                        # Research Mode
+                        mode = "Deep Research" if deep_research else "Quick Research"
+                        story.append(Paragraph(f"Mode: {mode}", styles['Normal']))
+                        story.append(Spacer(1, 12))
+
+                        # Query
+                        story.append(Paragraph(f"Query: {query}", heading_style))
+                        story.append(Spacer(1, 12))
+
+                        # Research Data
+                        story.append(Paragraph("Research Data:", heading_style))
+                        for item in data:
+                            content = f"- {item['title']}: {item['content']}"
+                            story.append(Paragraph(content, styles['BodyText']))
+                        story.append(Spacer(1, 24))  # Extra space before summary
+
+                        # Summary with research paper structure
+                        story.append(Paragraph("Summary:", heading_style))
+                        # Split summary into sections, ensuring proper separation
+                        summary_sections = summary.split("\n\n")
+                        current_heading = None
+                        for section in summary_sections:
+                            section = section.strip()
+                            if not section:
+                                continue
+                            # Check if the section starts with a heading (e.g., **Abstract**)
+                            if section.startswith("**") and section.endswith("**"):
+                                # Remove the Markdown ** syntax and use the bold style
+                                current_heading = section.strip("**").rstrip(":")
+                                story.append(Paragraph(current_heading, heading_style))
+                                story.append(Spacer(1, 6))
+                            else:
+                                # If it's not a heading, treat it as content under the current heading
+                                if current_heading:
+                                    # Skip the section if it exactly matches the current heading (safeguard)
+                                    if section.strip(":") == current_heading:
+                                        continue
+                                    # Check if the section starts with ## indicating a subheading
+                                    if section.startswith("##"):
+                                        # Extract subheading text, removing ## and any surrounding whitespace
+                                        subheading_text = section[2:].strip()
+                                        # Remove any lingering Markdown bold (**)
+                                        if subheading_text.startswith("*") and subheading_text.endswith("*"):
+                                            subheading_text = subheading_text.strip("*")
+                                        story.append(Paragraph(subheading_text, subheading_style))
+                                        story.append(Spacer(1, 6))
+                                    else:
+                                        # Remove any lingering Markdown bold (**) within content
+                                        if section.startswith("*") and section.endswith("*"):
+                                            section = section.strip("*")
+                                        story.append(Paragraph(section, styles['BodyText']))
+                                        story.append(Spacer(1, 12))
+                                else:
+                                    # Handle References section separately
+                                    if "References" in section:
+                                        story.append(Paragraph("References", heading_style))
+                                        story.append(Spacer(1, 6))
+                                        # Extract numbered references
+                                        ref_lines = section.split("\n")[1:]  # Skip the "References" line
+                                        for ref_line in ref_lines:
+                                            ref_line = ref_line.strip()
+                                            if ref_line:
+                                                # Extract the URL (after the number and dot, e.g., "1. https://...")
+                                                # Split on the first space after the number
+                                                parts = ref_line.split(" ", 1)
+                                                if len(parts) > 1:
+                                                    url = parts[1].strip()
+                                                    # Create a clickable hyperlink
+                                                    link_text = f'<link href="{url}" color="blue">{ref_line}</link>'
+                                                    story.append(Paragraph(link_text, reference_style))
+                                                    story.append(Spacer(1, 6))
+                                                else:
+                                                    story.append(Paragraph(ref_line, reference_style))
+                                                    story.append(Spacer(1, 6))
+                                    else:
+                                        # Remove any Markdown bold in content
+                                        if section.startswith("*") and section.endswith("*"):
+                                            section = section.strip("*")
+                                        story.append(Paragraph(section, styles['BodyText']))
+                                        story.append(Spacer(1, 12))
+
+                        doc.build(story)
+                        buffer.seek(0)
+                        return buffer
+
+                    # Offer PDF download
+                    pdf_buffer = generate_pdf(query, research_data, response, deep_research=deep_research)
+                    st.download_button(
+                        label="Download PDF Report",
+                        data=pdf_buffer,
+                        file_name="research_report.pdf",
+                        mime="application/pdf"
+                    )
             except Exception as e:
                 st.error(f"Failed after retries: {str(e)}")
             finally:
@@ -491,4 +588,4 @@ feedback = st.sidebar.text_area("How can we improve? (Optional)")
 if st.sidebar.button("Submit Feedback"):
     st.sidebar.success("Thanks for your feedback!")    
     with open("feedback.txt", "a") as f:
-     f.write(f"{feedback}\n")
+        f.write(f"{feedback}\n")
