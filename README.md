@@ -10,7 +10,7 @@ A dual-agent system for deep research, using Tavily for web crawling and OpenRou
 
     ``` 
     git clone https://github.com/saksham-jain177/AI-Agent-based-Deep-Research.git
-   cd AI-Agent-based-Deep-Research
+    cd AI-Agent-based-Deep-Research
    ```
 
 2. Install dependencies:
@@ -33,7 +33,7 @@ A dual-agent system for deep research, using Tavily for web crawling and OpenRou
       OPENROUTER_API_KEY=your_openrouter_key
       ```
       - Obtain a Tavily API key from [Tavily](https://tavily.com) (free tier available).
-      - Obtain an OpenRouter API key from [OpenRouter](https://openrouter.ai) (uses the free model `qwen/qwen-vl-plus:free`).
+      - Obtain an OpenRouter API key from [OpenRouter](https://openrouter.ai) (uses the free models, can be altered as per preference).
 
 4. Run the app:
       ```streamlit run app.py```
@@ -42,7 +42,7 @@ A dual-agent system for deep research, using Tavily for web crawling and OpenRou
 
 - **Dual-Agent System**:
 - **Research Agent**: Fetches data from the web using Tavily, returning structured results (title, content, URL).
-- **Draft Agent**: Generates structured summaries with sections: Introduction, Key Findings, Analysis, and Conclusion, using OpenRouter’s `qwen/qwen-vl-plus:free` model.
+- **Draft Agent**: Generates structured summaries with sections: Introduction, Key Findings, Analysis, and Conclusion, using OpenRouter’s available models.
 - **Structured Summaries**: Outputs summaries with clear sections (Introduction, Key Findings, Analysis, Conclusion) for readability.
 - **PDF Report Download**: Allows users to download a PDF report containing the query, research data, and structured summary, with proper text wrapping and multi-page support.
 - **Retry Logic**: Handles API failures with `tenacity`, retrying up to 3 times with a 2-second delay.
@@ -58,7 +58,7 @@ A dual-agent system for deep research, using Tavily for web crawling and OpenRou
 3. Click "Run Research" to fetch data and generate a summary.
 4. View the research data and structured summary.
 5. Download the PDF report using the "Download PDF Report" button.
-6. Provide feedback via the sidebar form (optional).
+6. Provide feedback via the sidebar form (optional), will generate a .txt file in same working directory.
 
 ## Contributing
 
