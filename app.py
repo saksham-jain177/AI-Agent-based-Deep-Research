@@ -1,5 +1,6 @@
 import streamlit as st
 from main import run_research  # Import run_research from main.py
+from draft_agent import format_citation, STYLE_TEMPLATES  # Add this import
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -11,12 +12,12 @@ import datetime
 import logging
 import re
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, Inches
 
 # Set up logging
 logging.basicConfig(filename="research_agent.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Initialize session state for storing research results
+# Initialize all session state variables at the top
 if "research_data" not in st.session_state:
     st.session_state.research_data = None
 if "response" not in st.session_state:
@@ -25,10 +26,14 @@ if "pdf_buffer" not in st.session_state:
     st.session_state.pdf_buffer = None
 if "word_buffer" not in st.session_state:
     st.session_state.word_buffer = None
-if "download_triggered" not in st.session_state:
-    st.session_state.download_triggered = False
-if "selected_format" not in st.session_state:
-    st.session_state.selected_format = "PDF (Recommended)"
+if "writing_style" not in st.session_state:
+    st.session_state.writing_style = "Academic"
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+if "citation_format" not in st.session_state:
+    st.session_state.citation_format = "APA"
+if "target_word_count" not in st.session_state:
+    st.session_state.target_word_count = 1000  # Default value
 
 # Inject custom CSS for improved readability and aesthetics
 st.markdown("""
@@ -501,6 +506,65 @@ def on_page(canvas, doc):
     canvas.drawRightString(doc.rightMargin + doc.width, doc.bottomMargin - 10, text)
     canvas.restoreState()
 
+def format_reference_for_pdf(ref_text):
+    """Format a single reference for PDF."""
+    # Extract date and URL using regex
+    date_match = re.search(r'\(([0-9]{4},\s*[^)]+)\)', ref_text)
+    url_match = re.search(r'Retrieved from\s+(https?://\S+)', ref_text)
+    
+    if date_match and url_match:
+        date = date_match.group(1)
+        url = url_match.group(1)
+        return f"({date}). Retrieved from {url}"
+    return ref_text
+
+def preprocess_references(refs_section):
+    """Preprocess references to ensure proper formatting."""
+    # Split references by looking for date pattern and "Retrieved from"
+    pattern = r'(?=\([0-9]{4},.*?\).*?Retrieved from)'
+    refs = re.split(pattern, refs_section)
+    # Clean up each reference
+    refs = [ref.strip() for ref in refs if ref.strip()]
+    
+    formatted_refs = []
+    for i, ref in enumerate(refs, 1):
+        # Split URL if it's broken across lines
+        ref = re.sub(r'(?<=https?://\S+)-\s*\n\s*(?=\S+)', '', ref)
+        # Remove any "Page X" artifacts
+        ref = re.sub(r'Page \d+\s*', '', ref)
+        # Clean up extra whitespace
+        ref = ' '.join(ref.split())
+        formatted_ref = format_reference_for_pdf(ref, i)
+        formatted_refs.append(formatted_ref)
+    
+    return formatted_refs
+
+def format_references_section(refs_text):
+    """Format references by adding line breaks after URLs."""
+    # Split by "Retrieved from" to separate different references
+    refs = refs_text.split("Retrieved from")
+    formatted_refs = []
+    
+    for i, ref in enumerate(refs):
+        if i == 0:  # First part might be empty
+            continue
+            
+        # Find the URL pattern
+        url_match = re.search(r'(https?://\S+)', ref)
+        if url_match:
+            url = url_match.group(1)
+            # Get the text before the URL (title part)
+            title_part = ref[:url_match.start()].strip()
+            if i > 0 and formatted_refs:  # Add the previous title
+                formatted_refs[-1] += f"Retrieved from {url}\n\n"
+            formatted_refs.append(title_part)
+    
+    # Handle the last URL
+    if formatted_refs and url_match:
+        formatted_refs[-1] += f"Retrieved from {url}\n\n"
+    
+    return "".join(formatted_refs)
+
 # Function to generate PDF with proper formatting and cover page
 def generate_pdf(query, data, summary, deep_research=False):
     """Generate a PDF report with query, data, and summary in a research paper format."""
@@ -526,36 +590,15 @@ def generate_pdf(query, data, summary, deep_research=False):
     styles['BodyText'].leading = 14
     styles['BodyText'].spaceAfter = 12
 
-    # Define a style for references (smaller font, hanging indent, blue hyperlinks)
-    reference_style = ParagraphStyle(
+    # Add a custom style for references
+    styles.add(ParagraphStyle(
         name='Reference',
         parent=styles['BodyText'],
-        fontSize=9,
-        leading=12,
-        firstLineIndent=-18,
-        leftIndent=18,
-        textColor=colors.blue
-    )
-
-    # Define a bold style for headings
-    heading_style = ParagraphStyle(
-        name='HeadingBold',
-        parent=styles['Heading2'],
-        fontName='Helvetica-Bold',
-        fontSize=14,
-        textColor=colors.black,
-        spaceAfter=6
-    )
-
-    # Define a style for subheadings (bold, slightly smaller than main headings)
-    subheading_style = ParagraphStyle(
-        name='SubheadingBold',
-        parent=styles['Heading3'],
-        fontName='Helvetica-Bold',
-        fontSize=12,
-        textColor=colors.black,
-        spaceAfter=6
-    )
+        fontSize=10,
+        leftIndent=36,
+        firstLineIndent=-36,
+        spaceAfter=12
+    ))
 
     story = []
 
@@ -574,79 +617,85 @@ def generate_pdf(query, data, summary, deep_research=False):
     story.append(Paragraph(f"Mode: {mode}", styles['Normal']))
     story.append(Spacer(1, 12))
 
-    # Query
-    story.append(Paragraph(f"Query: {query}", heading_style))
+    # Research Summary Section
+    story.append(Paragraph("Research Summary", styles['Heading2']))
     story.append(Spacer(1, 12))
 
-    # Research Data
-    story.append(Paragraph("Research Data:", heading_style))
+    # Add research data summary
     for item in data:
-        content = f"- {item['title']}: {item['content']}"
-        story.append(Paragraph(content, styles['BodyText']))
-    story.append(Spacer(1, 24))  # Extra space before summary
+        story.append(Paragraph(f"• {item['title']}", styles['Heading3']))
+        story.append(Paragraph(item['content'], styles['BodyText']))
+        story.append(Spacer(1, 12))
 
-    # Summary with research paper structure
-    story.append(Paragraph("Summary:", heading_style))
-    # Split summary into sections, ensuring proper separation
-    summary_sections = summary.split("\n\n")
+    # Process the content sections
+    sections = summary.split("\n\n")
+    references = []
     current_heading = None
-    for section in summary_sections:
-        section = section.strip()
-        if not section:
-            continue
-        # Check if the section starts with a heading (e.g., **Abstract**)
+    
+    for section in sections:
         if section.startswith("**") and section.endswith("**"):
-            # Remove the Markdown ** syntax and use the bold style
             current_heading = section.strip("**").rstrip(":")
-            story.append(Paragraph(current_heading, heading_style))
-            story.append(Spacer(1, 6))
+            if current_heading == "References":
+                continue
+            story.append(Paragraph(current_heading, styles['Heading2']))
+            story.append(Spacer(1, 12))
         else:
-            # If it's not a heading, treat it as content under the current heading
-            if current_heading:
-                # Skip the section if it exactly matches the current heading (safeguard)
-                if section.strip(":") == current_heading:
-                    continue
-                # Check if the section starts with ## indicating a subheading
-                if section.startswith("##"):
-                    # Extract subheading text, removing ## and any surrounding whitespace
-                    subheading_text = section[2:].strip()
-                    # Remove any lingering Markdown bold (**)
-                    if subheading_text.startswith("*") and subheading_text.endswith("*"):
-                        subheading_text = subheading_text.strip("*")
-                    story.append(Paragraph(subheading_text, subheading_style))
-                    story.append(Spacer(1, 6))
+            if current_heading == "References":
+                # Collect references for later processing
+                refs = section.split("\n")
+                for ref in refs:
+                    if ref.strip():
+                        references.append(ref.strip())
+            elif current_heading:
+                if current_heading == "Analysis":
+                    # Split into smaller paragraphs for readability
+                    sentences = re.split(r'(?<=[.!?])\s+', section)
+                    new_paragraphs = []
+                    current_paragraph = []
+                    sentence_count = 0
+                    
+                    max_sentences = 4 if len(sentences) < 15 else 6
+                    
+                    for sentence in sentences:
+                        current_paragraph.append(sentence)
+                        sentence_count += 1
+                        if sentence_count >= max_sentences:
+                            new_paragraphs.append(' '.join(current_paragraph))
+                            current_paragraph = []
+                            sentence_count = 0
+                    
+                    if current_paragraph:
+                        new_paragraphs.append(' '.join(current_paragraph))
+                    
+                    for paragraph in new_paragraphs:
+                        if paragraph.strip():
+                            story.append(Paragraph(paragraph.strip(), styles['BodyText']))
+                            story.append(Spacer(1, 12))
+                elif current_heading == "Key Findings":
+                    findings = re.split(r'(?=\d+\.)', section)
+                    for finding in findings:
+                        if finding.strip():
+                            story.append(Paragraph(finding.strip(), styles['BodyText']))
+                            story.append(Spacer(1, 6))
                 else:
-                    # Handle inline Markdown bold (**...**) within the content
                     formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
                     formatted_text = formatted_text.replace("**", "")
                     story.append(Paragraph(formatted_text, styles['BodyText']))
                     story.append(Spacer(1, 12))
-            else:
-                # Handle References section separately
-                if "References" in section:
-                    story.append(Paragraph("References", heading_style))
-                    story.append(Spacer(1, 6))
-                    # Extract numbered references
-                    ref_lines = section.split("\n")[1:]  # Skip the "References" line
-                    for ref_line in ref_lines:
-                        ref_line = ref_line.strip()
-                        if ref_line:
-                            # Extract the URL (after the number and dot, e.g., "1. https://...")
-                            parts = ref_line.split(" ", 1)
-                            if len(parts) > 1:
-                                url = parts[1].strip()
-                                link_text = f'<link href="{url}" color="blue">{ref_line}</link>'
-                                story.append(Paragraph(link_text, reference_style))
-                                story.append(Spacer(1, 6))
-                            else:
-                                story.append(Paragraph(ref_line, reference_style))
-                                story.append(Spacer(1, 6))
-                else:
-                    # Handle inline Markdown bold in content
-                    formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
-                    formatted_text = formatted_text.replace("**", "")
-                    story.append(Paragraph(formatted_text, styles['BodyText']))
-                    story.append(Spacer(1, 12))
+
+    # Add References section at the end
+    if references:
+        story.append(Paragraph("References", styles['Heading2']))
+        story.append(Spacer(1, 12))
+        
+        for i, ref in enumerate(references, 1):
+            formatted_ref = format_reference_for_pdf(ref)
+            if formatted_ref:
+                ref_para = Paragraph(
+                    f"{i}. {formatted_ref}",
+                    styles['Reference']
+                )
+                story.append(ref_para)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     buffer.seek(0)
@@ -662,19 +711,81 @@ def generate_docx(query, data, summary, deep_research=False):
     doc.add_paragraph(f"Author: [Your Name]")
     doc.add_paragraph(f"OpenRouter Status: {'Operational' if check_openrouter_status() else 'Down'}")
     doc.add_paragraph(f"Mode: {'Deep Research' if deep_research else 'Quick Research'}")
-    doc.add_heading("Research Data", level=1)
+    
+    # Research Summary Section
+    doc.add_heading("Research Summary", level=1)
     for item in data:
-        doc.add_paragraph(f"- {item['title']}: {item['content']}")
-    doc.add_heading("Summary", level=1)
+        p = doc.add_paragraph()
+        p.add_run(f"• {item['title']}").bold = True
+        doc.add_paragraph(item['content'])
+        doc.add_paragraph(f"Source: {item['url']}")
+        doc.add_paragraph()  # Add spacing
+
+    # Process other sections
     sections = summary.split("\n\n")
     current_heading = None
+    references = []
+    
     for section in sections:
         if section.startswith("**") and section.endswith("**"):
             current_heading = section.strip("**").rstrip(":")
-            doc.add_heading(current_heading, level=2)
+            if current_heading != "References":
+                doc.add_heading(current_heading, level=2)
         else:
-            if current_heading:
-                doc.add_paragraph(section)
+            if current_heading == "References":
+                # Collect references for later processing
+                refs = section.split("\n")
+                for ref in refs:
+                    if ref.strip():
+                        references.append(ref.strip())
+            elif current_heading == "Analysis":
+                # Split into smaller paragraphs for readability
+                sentences = re.split(r'(?<=[.!?])\s+', section)
+                new_paragraphs = []
+                current_paragraph = []
+                sentence_count = 0
+                
+                max_sentences = 4 if len(sentences) < 15 else 6
+                
+                for sentence in sentences:
+                    current_paragraph.append(sentence)
+                    sentence_count += 1
+                    if sentence_count >= max_sentences:
+                        new_paragraphs.append(' '.join(current_paragraph))
+                        current_paragraph = []
+                        sentence_count = 0
+                
+                if current_paragraph:
+                    new_paragraphs.append(' '.join(current_paragraph))
+                
+                for paragraph in new_paragraphs:
+                    if paragraph.strip():
+                        p = doc.add_paragraph(paragraph.strip())
+                        p.paragraph_format.space_after = Pt(12)
+            elif current_heading == "Key Findings":
+                findings = re.split(r'(?=\d+\.)', section)
+                for finding in findings:
+                    if finding.strip():
+                        p = doc.add_paragraph(finding.strip())
+                        p.paragraph_format.space_after = Pt(6)
+            else:
+                formatted_text = re.sub(r"\*\*(.*?)\*\*", r"\1", section)
+                p = doc.add_paragraph(formatted_text)
+                p.paragraph_format.space_after = Pt(12)
+
+    # Add References section at the end
+    if references:
+        doc.add_heading("References", level=2)
+        
+        for i, ref in enumerate(references, 1):
+            formatted_ref = format_reference_for_pdf(ref)
+            if formatted_ref:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.5)
+                p.paragraph_format.first_line_indent = Inches(-0.5)
+                p.paragraph_format.space_after = Pt(12)
+                p.add_run(f"{i}. {formatted_ref}")
+
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
@@ -692,18 +803,110 @@ else:
     st.sidebar.error("Down", icon="❌")
 
 st.sidebar.header("About")
-st.sidebar.write("Dual-agent system using Tavily for research and OpenRouter for drafting with the cognitivecomputations/dolphin3.0-r1-mistral-24b:free model.")
+st.sidebar.write("Dual-agent system using Tavily for research and OpenRouter for drafting with the model of your choosing.")
 st.sidebar.write("Built with LangChain, LangGraph, and Streamlit.")
 
-# User input with Deep Research toggle and customization
+# User input with Deep Research toggle
 query = st.text_input("Research Query", "Latest advancements in quantum computing")
 deep_research = st.checkbox("Deep Research Mode", value=False, help="Enable for a detailed, research-paper-style summary (5-6+ pages).")
 
-# Customizable word count
-word_count_min = 500 if not deep_research else 2000
-word_count_max = 2000 if not deep_research else 5000
-word_count_default = 1000 if not deep_research else 4000
-target_word_count = st.slider("Target Word Count", word_count_min, word_count_max, word_count_default, step=500)
+# Research Settings Header
+st.markdown("""
+    <h2 style='color: #79c0ff; font-size: 1.8rem; font-weight: 600; margin-top: 1.8rem; margin-bottom: 1rem;'>
+        🛠️ Research Settings
+    </h2>
+""", unsafe_allow_html=True)
+
+# Create three columns for better organization
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("#### Writing Style")
+    writing_style = st.radio(
+        "Select writing style",
+        options=["Academic", "Business", "Technical", "Casual"],
+        index=0,
+        key="writing_style_radio",
+        help="Choose the tone and style of your research"
+    )
+
+with col2:
+    st.markdown("#### Language")
+    language = st.radio(
+        "Select language",
+        options=["English", "Spanish", "French", "German", "Chinese"],
+        index=0,
+        key="language_radio",
+        help="Choose output language"
+    )
+
+with col3:
+    st.markdown("#### Citation Format")
+    citation_format = st.radio(
+        "Select citation style",
+        options=["APA", "MLA", "IEEE"],
+        index=0,
+        key="citation_format_radio",
+        help="Choose citation formatting style"
+    )
+
+# Add word count slider below the columns
+st.markdown("#### Target Word Count")
+target_word_count = st.slider(
+    "Select target word count",
+    min_value=500,
+    max_value=5000,
+    value=1000,
+    step=100,
+    key="word_count_slider",
+    help="Choose the approximate length of your research paper"
+)
+
+# Update all session state values
+st.session_state.writing_style = writing_style
+st.session_state.language = language
+st.session_state.citation_format = citation_format
+st.session_state.target_word_count = target_word_count
+
+# Display current settings
+st.markdown("""
+    <div style='margin-top: 2rem;'>
+        <p style='color: #58a6ff; font-size: 1.1rem; font-weight: 500;'>Current Settings:</p>
+        <ul style='list-style-type: none; padding: 0; color: #c9d1d9;'>
+            <li>📝 Writing Style: <strong>{}</strong></li>
+            <li>📚 Citation Format: <strong>{}</strong></li>
+            <li>🌐 Language: <strong>{}</strong></li>
+            <li>📊 Target Words: <strong>{}</strong></li>
+        </ul>
+    </div>
+""".format(
+    writing_style.title(),
+    citation_format,
+    language.title(),
+    target_word_count
+), unsafe_allow_html=True)
+
+# Style descriptions dictionary with capitalized keys
+style_descriptions = {
+    "Academic": "Formal scholarly writing with rigorous citations",
+    "Business": "Professional tone with actionable insights",
+    "Technical": "Detailed technical analysis and specifications",
+    "Casual": "Accessible, conversational explanation"
+}
+
+with st.expander("📋 Writing Style Preview"):
+    st.markdown(f"""
+        <div style='background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem;'>
+            <p style='color: #58a6ff; font-weight: bold;'>{writing_style}</p>
+            <p style='color: #c9d1d9;'>{style_descriptions[writing_style]}</p>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown(f"<p style='color: #c9d1d9;'>Example citation in {citation_format}:</p>", unsafe_allow_html=True)
+    example_citation = {
+        "title": "Sample Research Paper",
+        "url": "https://example.com/research",
+    }
+    st.code(format_citation(example_citation, citation_format))
 
 # Research button logic
 if st.button("Run Research"):
@@ -721,7 +924,14 @@ if st.button("Run Research"):
                 # Step 1: Fetch research data
                 status_text.text("Step 1/3: Fetching research data... 🔍")
                 logging.info(f"Starting research for query: {query}, deep_research: {deep_research}, target_word_count: {target_word_count}")
-                research_data, response = run_research(query, deep_research=deep_research, target_word_count=target_word_count)
+                research_data, response = run_research(
+                    query,
+                    deep_research=deep_research,
+                    target_word_count=target_word_count,
+                    writing_style=writing_style,
+                    citation_format=citation_format,
+                    language=language
+                )
                 progress_bar.progress(33)
 
                 # Step 2: Drafting response
@@ -741,24 +951,100 @@ if st.button("Run Research"):
                     sections = response.split("\n\n")
                     current_section = None
                     section_content = []
+
+                    # First, display Research Summary section
+                    st.write("### Research Summary 📊")
+                    with st.expander("View Research Summary", expanded=True):
+                        for item in research_data:
+                            st.markdown(f"**{item['title']}**")
+                            st.write(item['content'])
+                            st.markdown(f"[Source]({item['url']})")
+                            st.markdown("---")
+
+                    st.write("### Detailed Analysis 📝")
+                    
+                    # Then process other sections
                     for section in sections:
                         if section.startswith("**") and section.endswith("**"):
                             # If we have accumulated content for the previous section, display it
                             if current_section and section_content:
-                                with st.expander(current_section, expanded=False):
-                                    for content in section_content:
-                                        st.markdown(content)
+                                with st.expander(current_section, expanded=True):
+                                    if current_section == "References":
+                                        # Special handling for references with numbering
+                                        references = "\n".join(section_content).strip().split("\n")
+                                        for i, ref in enumerate(references, 1):
+                                            if ref.strip():
+                                                # Format reference with number and add horizontal line
+                                                st.markdown(f"{i}. {ref.strip()}")
+                                                st.markdown("---")
+                                    elif current_section == "Analysis":
+                                        # Keep existing Analysis formatting
+                                        analysis_text = "\n".join(section_content)
+                                        sentences = re.split(r'(?<=[.!?])\s+', analysis_text)
+                                        paragraphs = []
+                                        current_paragraph = []
+                                        sentence_count = 0
+                                        
+                                        for sentence in sentences:
+                                            current_paragraph.append(sentence)
+                                            sentence_count += 1
+                                            if sentence_count >= 6:
+                                                paragraphs.append(" ".join(current_paragraph))
+                                                current_paragraph = []
+                                                sentence_count = 0
+                                        
+                                        if current_paragraph:
+                                            paragraphs.append(" ".join(current_paragraph))
+                                        
+                                        for paragraph in paragraphs:
+                                            st.write(paragraph)
+                                            st.write("")
+                                    else:
+                                        for content in section_content:
+                                            st.markdown(content)
+                                            
                             # Start a new section
                             current_section = section.strip("**").rstrip(":")
                             section_content = []
                         else:
                             if current_section:
                                 section_content.append(section)
+
                     # Display the last section
                     if current_section and section_content:
-                        with st.expander(current_section, expanded=False):
-                            for content in section_content:
-                                st.markdown(content)
+                        with st.expander(current_section, expanded=True):
+                            if current_section == "References":
+                                references = "\n".join(section_content).strip().split("\n")
+                                for i, ref in enumerate(references, 1):
+                                    if ref.strip():
+                                        # Format reference with number and add horizontal line
+                                        st.markdown(f"{i}. {ref.strip()}")
+                                        st.markdown("---")
+                            elif current_section == "Analysis":
+                                # Keep existing Analysis formatting
+                                analysis_text = "\n".join(section_content)
+                                sentences = re.split(r'(?<=[.!?])\s+', analysis_text)
+                                paragraphs = []
+                                current_paragraph = []
+                                sentence_count = 0
+                                
+                                for sentence in sentences:
+                                    current_paragraph.append(sentence)
+                                    sentence_count += 1
+                                    if sentence_count >= 6:
+                                        paragraphs.append(" ".join(current_paragraph))
+                                        current_paragraph = []
+                                        sentence_count = 0
+                                
+                                if current_paragraph:
+                                    paragraphs.append(" ".join(current_paragraph))
+                                
+                                for paragraph in paragraphs:
+                                    st.write(paragraph)
+                                    st.write("")
+                            else:
+                                for content in section_content:
+                                    st.markdown(content)
 
                     # Calculate word count and page estimate
                     word_count = len(response.split())

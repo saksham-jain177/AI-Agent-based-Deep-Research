@@ -12,6 +12,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field  # Import Pydantic for schema definition
+from urllib.parse import urlparse
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(filename="research_agent.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -25,6 +27,53 @@ llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     model="cognitivecomputations/dolphin3.0-r1-mistral-24b:free"
 )
+
+# Writing style templates
+STYLE_TEMPLATES = {
+    "academic": {
+        "tone": "formal and scholarly",
+        "vocabulary": "academic terminology and precise language",
+        "structure": "rigorous academic structure with clear theoretical foundations"
+    },
+    "business": {
+        "tone": "professional and action-oriented",
+        "vocabulary": "business terminology and clear, direct language",
+        "structure": "executive summary style with actionable insights"
+    },
+    "technical": {
+        "tone": "precise and technical",
+        "vocabulary": "technical terminology and specific technical concepts",
+        "structure": "systematic technical documentation style"
+    },
+    "casual": {
+        "tone": "conversational and accessible",
+        "vocabulary": "clear, everyday language",
+        "structure": "engaging and easy-to-follow format"
+    }
+}
+
+# Citation formatting functions
+def format_citation(item: Dict[str, Any], format_style: str) -> str:
+    """Format citation according to specified style."""
+    title = item.get('title', '')
+    url = item.get('url', '')
+    # Extract domain as publisher
+    publisher = urlparse(url).netloc if url else "Unknown Publisher"
+    # Extract date or use current
+    date = datetime.now().strftime("%Y, %B %d")
+    
+    if format_style == "APA":
+        return f"{title}. ({date}). Retrieved from {url}"
+    elif format_style == "MLA":
+        return f'"{title}." {publisher}, {date}, {url}'
+    elif format_style == "IEEE":
+        return f"[{hash(url) % 100 + 1}] {title}, {publisher}, {date}."
+    return f"{title} - {url}"
+
+def apply_writing_style(prompt: str, style: str) -> str:
+    """Apply writing style to prompt template."""
+    style_config = STYLE_TEMPLATES.get(style, STYLE_TEMPLATES["academic"])
+    return prompt + f"\n\nUse a {style_config['tone']} tone with {style_config['vocabulary']}, following a {style_config['structure']}."
 
 # Prompts for shallow research mode
 def get_shallow_word_counts(target_word_count):
@@ -56,7 +105,23 @@ shallow_key_findings_prompt = PromptTemplate(
 shallow_analysis_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a concise analysis section for a research summary based on the following data. Provide brief insights or implications of the findings in approximately {word_count} words, focusing on clarity and understanding with minimal context. Do not include the word "Analysis" in your response; only provide the content of the analysis section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a concise analysis section for a research summary based on the following data. Structure your analysis exactly as follows, with each section clearly marked:
+
+    [PARA1]
+    Initial assessment (~75 words): Provide primary observations and immediate implications.
+    [/PARA1]
+
+    [PARA2]
+    Detailed examination (~50 words): Explore key patterns and relationships.
+    [/PARA2]
+
+    [PARA3]
+    Critical insights (~50 words): Discuss significant findings and their impact.
+    [/PARA3]
+
+    [PARA4]
+    Future implications (~25 words): Brief outlook on potential developments.
+    [/PARA4]
 
     Data: {data}
     """
@@ -179,12 +244,92 @@ class DraftAnswerArgs(BaseModel):
     data: List[Dict[str, Any]] = Field(description="List of research data dictionaries containing title, content, and url")
     deep_research: bool = Field(default=False, description="Whether to perform deep research mode (detailed summary)")
     target_word_count: int = Field(default=1000, description="Target word count for the summary")
+    writing_style: str = Field(default="academic", description="Writing style for the summary")
+    citation_format: str = Field(default="APA", description="Citation format for references")
+    language: str = Field(default="english", description="Language for the summary")
     retries: int = Field(default=3, description="Number of retries for API calls")
     delay: int = Field(default=5, description="Delay between retries in seconds")
 
+STYLE_PROMPTS = {
+    "academic": """Write in a formal academic style with:
+        - Scholarly terminology and precise language
+        - Clear theoretical foundations
+        - Objective analysis
+        - Proper citations and references""",
+    
+    "business": """Write in a professional business style with:
+        - Executive summary approach
+        - Action-oriented insights
+        - Clear ROI and business implications
+        - Professional but accessible language""",
+    
+    "technical": """Write in a technical style with:
+        - Detailed technical specifications
+        - Step-by-step explanations
+        - Technical terminology
+        - Data-driven insights""",
+    
+    "casual": """Write in an accessible, casual style with:
+        - Clear, everyday language
+        - Engaging examples
+        - Conversational tone
+        - Relatable explanations"""
+}
+
+LANGUAGE_PROMPTS = {
+    "english": """Write in standard academic English following international research paper standards:
+        - Use British/American English consistently
+        - Follow academic writing conventions
+        - Maintain formal scholarly tone""",
+    
+    "spanish": """Escriba en español académico siguiendo los estándares internacionales de investigación:
+        - Use español académico estándar
+        - Siga las convenciones académicas españolas
+        - Mantenga un tono académico formal""",
+    
+    "french": """Rédigez en français académique selon les normes internationales de recherche:
+        - Utilisez le français académique standard
+        - Suivez les conventions académiques françaises
+        - Maintenez un ton académique formel""",
+    
+    "german": """Schreiben Sie in akademischem Deutsch nach internationalen Forschungsstandards:
+        - Verwenden Sie Standard-Wissenschaftsdeutsch
+        - Folgen Sie deutschen akademischen Konventionen
+        - Halten Sie einen formellen akademischen Ton""",
+    
+    "chinese": """按照国际研究论文标准使用学术中文写作：
+        - 使用规范的学术中文
+        - 遵循中文学术写作规范
+        - 保持正式的学术语气""",
+}
+
+def format_citation(source: Dict[str, str], style: str) -> str:
+    """Format citation based on selected style."""
+    title = source.get('title', '')
+    url = source.get('url', '')
+    date = datetime.now().strftime("%Y, %B %d")
+    domain = urlparse(url).netloc
+
+    citations = {
+        "APA": f"{title}. ({date}). Retrieved from {url}",
+        "MLA": f'"{title}." {domain}. {date}. Web.',
+        "IEEE": f"[{hash(url) % 100 + 1}] {title}. {domain}. {date}.",
+    }
+    
+    return citations.get(style, citations["APA"])
+
 # Drafting function with retry logic and deep research support
-def draft_answer(data: List[Dict[str, Any]], deep_research: bool = False, target_word_count: int = 1000, retries: int = 3, delay: int = 5) -> str:
-    """Draft a research summary with retry logic, supporting deep research mode and customizable word count."""
+def draft_answer(
+    data: List[Dict[str, Any]], 
+    deep_research: bool = False, 
+    target_word_count: int = 1000,
+    writing_style: str = "academic",
+    citation_format: str = "APA",
+    language: str = "english",
+    retries: int = 3, 
+    delay: int = 5
+) -> str:
+    """Enhanced draft function with style, citations, and language support."""
     if not data:
         return "Error drafting response: No research data provided"
 
@@ -192,79 +337,67 @@ def draft_answer(data: List[Dict[str, Any]], deep_research: bool = False, target
     while attempt < retries:
         try:
             data_str = json.dumps(data)
-            # Test API endpoint connectivity
-            test_response = requests.get(
-                "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"},
-                timeout=10
-            )
+            
+            # Add citations to data
+            citations = [format_citation(item, citation_format) for item in data]
+            data_with_citations = {
+                "content": data_str,
+                "citations": citations,
+                "style": writing_style,
+                "language": language
+            }
+
+            # Modify prompts with style and language
+            if not deep_research:
+                sections = [
+                    ("Key Findings", apply_writing_style(key_findings_prompt.template, writing_style)),
+                    ("Analysis", apply_writing_style(analysis_prompt.template, writing_style))
+                ]
+            else:
+                sections = [
+                    ("Abstract", apply_writing_style(abstract_prompt.template, writing_style)),
+                    ("Introduction", apply_writing_style(introduction_prompt.template, writing_style)),
+                    ("Literature Review", apply_writing_style(literature_review_prompt.template, writing_style)),
+                    ("Key Findings", apply_writing_style(key_findings_prompt.template, writing_style)),
+                    ("Analysis", apply_writing_style(analysis_prompt.template, writing_style)),
+                    ("Conclusion", apply_writing_style(conclusion_prompt.template, writing_style))
+                ]
+
+            # Add language instruction to system message
+            system_message = f"Please provide the response in {language}. "
+            system_message += f"Use {citation_format} citation format when referencing sources."
 
             response_text = ""
-            if not deep_research:
-                # Shallow mode: Split into multiple LLM calls for consistent structure
-                intro_count, findings_count, analysis_count, conclusion_count = get_shallow_word_counts(target_word_count)
-                sections = [
-                    ("Introduction", shallow_introduction_prompt, intro_count),
-                    ("Key Findings", shallow_key_findings_prompt, findings_count),
-                    ("Analysis", shallow_analysis_prompt, analysis_count),
-                    ("Conclusion", shallow_conclusion_prompt, conclusion_count)
+            for section_name, prompt_template in sections:
+                messages = [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt_template.format(
+                        data=json.dumps(data_with_citations),
+                        word_count=target_word_count // len(sections)
+                    )}
                 ]
-                # Sequential processing for shallow mode (smaller workload)
-                for section_name, section_prompt, word_count in sections:
-                    formatted_prompt = section_prompt.format(data=data_str, word_count=word_count)
-                    messages = [{"role": "user", "content": formatted_prompt}]
-                    response = llm.invoke(messages)
-                    section_text = clean_think_tags(response.content.strip())
-                    if section_name == "Key Findings":
-                        section_text = format_key_findings(section_text)
-                    response_text += f"\n\n**{section_name}**\n\n{section_text}"
-            else:
-                # Deep research mode: Parallelize LLM calls for efficiency
-                abstract_count, intro_count, lit_review_count, findings_count, analysis_count, conclusion_count = get_deep_word_counts(target_word_count)
-                sections = [
-                    ("Abstract", abstract_prompt, abstract_count),
-                    ("Introduction", introduction_prompt, intro_count),
-                    ("Literature Review", literature_review_prompt, lit_review_count),
-                    ("Key Findings", key_findings_prompt, findings_count),
-                    ("Analysis", analysis_prompt, analysis_count),
-                    ("Conclusion", conclusion_prompt, conclusion_count)
-                ]
-                with ThreadPoolExecutor() as executor:
-                    futures = [
-                        executor.submit(generate_section, section_name, section_prompt, data_str, word_count)
-                        for section_name, section_prompt, word_count in sections
-                    ]
-                    section_results = []
-                    for future in as_completed(futures):
-                        section_name, section_text = future.result()
-                        section_results.append((section_name, section_text))
-                # Sort results to maintain order
-                section_results.sort(key=lambda x: [s[0] for s in sections].index(x[0]))
-                for section_name, section_text in section_results:
-                    response_text += f"\n\n**{section_name}**\n\n{section_text}"
+                
+                response = llm.invoke(messages)
+                section_text = clean_think_tags(response.content.strip())
+                
+                if section_name == "Key Findings":
+                    section_text = format_key_findings(section_text)
+                
+                response_text += f"\n\n**{section_name}**\n\n{section_text}"
 
-                # Add References section
-                references = "\n\n**References**\n"
-                for i, item in enumerate(data, 1):
-                    references += f"{i}. {item['url']}\n"
-                response_text += references
+            # Add References section
+            response_text += "\n\n**References**\n\n"
+            response_text += "\n".join(citations)
 
-            # Debug: Calculate and log word count of the response
-            word_count = len(response_text.split())
-            logging.info(f"Generated summary word count: {word_count}")
             return response_text
 
-        except APIConnectionError as e:
-            logging.error(f"APIConnectionError on attempt {attempt + 1}: {str(e)}")
-            attempt += 1
-            time.sleep(delay)
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Network error on attempt {attempt + 1}: {str(e)}")
-            attempt += 1
-            time.sleep(delay)
         except Exception as e:
-            logging.error(f"Other error: {type(e).__name__} - {str(e)}")
+            attempt += 1
+            if attempt < retries:
+                time.sleep(delay)
+                continue
             return f"Error drafting response: {type(e).__name__} - {str(e)}"
+    
     return "Error drafting response: Max retries exceeded."
 
 # Define the tool with support for deep research and target word count using StructuredTool
