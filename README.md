@@ -8,6 +8,10 @@ A dual-agent system for deep research, using Tavily for web crawling and OpenRou
 
 Access the live application at: [https://deep-research-ai-agent.streamlit.app/](https://deep-research-ai-agent.streamlit.app/)
 
+## Watch the Demo
+
+[![Watch the demo video](https://i.vimeocdn.com/video/2006782380-10ad9763c14f305a030d0d013b1c71528b7b836637d609c0829e52980037c6d3-d_640x360)](https://vimeo.com/1076886152)
+
 ## Setup
 
 1. Clone the repo:
