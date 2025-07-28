@@ -1,4 +1,4 @@
-from langgraph.graph import Graph
+from langgraph.graph import StateGraph  
 from research_agent import research_tool
 from draft_agent import draft_tool
 from joblib import Memory
@@ -54,7 +54,7 @@ def draft_node(state):
     return state
 
 # Initialize the graph
-workflow = Graph()
+workflow = StateGraph(dict)
 
 # Add nodes to the workflow
 workflow.add_node("research", research_node)
@@ -89,10 +89,9 @@ def run_research(query: str, deep_research: bool = False, target_word_count: int
             raise Exception(f"Workflow returned unexpected type: {type(result)}")
         research_data = result.get("research", [])
         draft_response = result.get("draft", "Error: Draft not generated")
-        return research_data, draft_response  # Make sure we're returning both values
+        return research_data, draft_response
     except Exception as e:
-        # Return a tuple with empty list and error message instead of raising
-        return [], f"Workflow failed: {str(e)}"  # Add this line to ensure we always return 2 values
+        return [], f"Workflow failed: {str(e)}"
 
 # Example usage
 if __name__ == "__main__":
