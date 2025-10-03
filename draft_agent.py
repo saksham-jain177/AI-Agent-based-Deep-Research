@@ -406,6 +406,8 @@ def draft_answer(
                 
                 if section_name == "Key Findings":
                     section_text = format_key_findings(section_text)
+                # Normalize paragraphs: ensure double newlines between logical paragraphs
+                section_text = re.sub(r"\n{3,}", "\n\n", section_text.strip())
                 
                 response_text.append({"title": section_name, "content": section_text})
 

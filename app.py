@@ -331,18 +331,9 @@ st.markdown("""
         box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
     }
     
-    /* Progress bar - single visible fill (hide track for cleaner look) */
-    .stProgress > div > div {
-        background-color: transparent;
-        height: 0.6rem !important;
-        border-radius: 1rem;
-    }
-    
-    .stProgress > div > div > div {
-        background-image: linear-gradient(to right, #0891b2, #22d3ee);
-        border-radius: 1rem;
-        box-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
-    }
+    /* Progress bar - keep Streamlit defaults for correct fill behavior */
+    .stProgress > div > div { height: 0.6rem !important; border-radius: 1rem; }
+    .stProgress > div > div > div { border-radius: 1rem; }
     
     /* Notification messages */
     .stSuccess {
@@ -829,20 +820,28 @@ st.sidebar.write("Built with LangChain, LangGraph, and Streamlit.")
 def _fix_readability(text: str) -> str:
     if not isinstance(text, str):
         return ""
-    t = text
-    # Normalize whitespace
-    t = re.sub(r"\s+", " ", t).strip()
-    # Ensure a space after punctuation if followed by a letter (e.g., ".The" -> ". The")
-    t = re.sub(r"([\.,;:])(?!\s)(?=[A-Za-z])", r"\1 ", t)
-    # Insert a space between an ALL-CAPS token and a following lowercase start (e.g., "AIis" -> "AI is")
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Ensure a space after punctuation if followed by a letter (keep newlines)
+    t = re.sub(r"([\.,;:])(?![\s\n])(?!$)(?=[A-Za-z])", r"\1 ", t)
+    # Insert a space between ALL-CAPS token and following lowercase (avoid newlines)
     t = re.sub(r"\b([A-Z]{2,})([a-z])", r"\1 \2", t)
     # Insert a space between a closing alpha and opening parenthesis if missing
     t = re.sub(r"([A-Za-z])\(", r"\1 (", t)
     return t
 
 def _render_small_text(text: str):
-    safe = html.escape(_fix_readability(text))
-    st.markdown(f"<div style='font-size:0.95rem; line-height:1.7;'>{safe}</div>", unsafe_allow_html=True)
+    t = _fix_readability(text)
+    safe = html.escape(t)
+    # Preserve paragraphs: split on blank lines
+    parts = [p.strip() for p in safe.split("\n\n") if p.strip()]
+    if not parts:
+        st.markdown(f"<div style='font-size:0.95rem; line-height:1.7;'>{safe}</div>", unsafe_allow_html=True)
+        return
+    html_blocks = []
+    for p in parts:
+        p_clean = p.replace("\n", " ")
+        html_blocks.append(f"<p style='margin:0 0 0.75rem 0;'>{p_clean}</p>")
+    st.markdown("".join(html_blocks), unsafe_allow_html=True)
 
 
 # API Keys gate & configuration
@@ -1183,7 +1182,7 @@ if st.button("Run Research", disabled=run_disabled):
                     citation_format=citation_format,
                     language=language
                 )
-                progress_bar.progress(33)
+                progress_bar.progress(20)
 
                 # Step 2: Drafting response
                 status_text.text("Step 2/3: Drafting response... ✍️")
@@ -1191,7 +1190,9 @@ if st.button("Run Research", disabled=run_disabled):
                     st.error(response)
                     logging.error(f"Failed to draft response: {response}")
                 else:
-                    progress_bar.progress(66)
+                    # Simulate gradual progress during drafting for better feedback
+                    for p in (35, 45, 55, 65):
+                        progress_bar.progress(p)
 
                     # Step 3: Generating PDF
                     status_text.text("Step 3/3: Generating PDF report... 📄")
@@ -1227,6 +1228,7 @@ if st.button("Run Research", disabled=run_disabled):
                     word_count = len(response.split())
                     page_estimate = word_count // 400 + 1  # Rough estimate: ~400 words per page
                     st.info(f"Summary contains {word_count} words, estimated at {page_estimate} pages.")
+                    progress_bar.progress(85)
 
                     # Store results in session state
                     st.session_state.research_data = research_data
@@ -1245,6 +1247,7 @@ if st.button("Run Research", disabled=run_disabled):
             st.error(f"Failed after retries: {str(e)}")
             logging.error(f"Failed to process query '{query}': {str(e)}")
         finally:
+            progress_bar.progress(100)
             progress_bar.empty()  # Clear progress bar
             status_text.empty()  # Clear status text
             st.session_state["__busy__"] = False
