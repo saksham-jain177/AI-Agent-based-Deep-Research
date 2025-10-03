@@ -1,9 +1,0 @@
-__pycache__/
-*.pyc
-*.log
-.env
-research_data.json
-feedback.txt
-func_code.py
-metadata.json
-output.pkl
