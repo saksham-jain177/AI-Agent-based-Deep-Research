@@ -1,0 +1,12 @@
+langchain-community
+langchain-openai
+langgraph
+tavily-python
+requests
+beautifulsoup4
+python-dotenv
+streamlit
+joblib
+reportlab
+python-docx
+tenacity

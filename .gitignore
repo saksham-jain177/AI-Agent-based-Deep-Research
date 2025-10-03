@@ -1,0 +1,38 @@
+__pycache__/
+*.pyc
+*.log
+.env
+research_data.json
+feedback.txt
+func_code.py
+metadata.json
+output.pkl
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.build/
+dist/
+
+# Local envs
+.venv/
+venv/
+env/
+
+# Caches/temp
+.cache/
+cache/
+.pytest_cache/
+.streamlit/
+.ipynb_checkpoints/
+research_data.json
+feedback.txt
+research_agent.log
+
+# Editors/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
