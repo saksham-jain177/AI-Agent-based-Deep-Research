@@ -710,7 +710,7 @@ def generate_pdf(query, data, summary, deep_research=False):
                     formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
                     story.append(Paragraph(formatted_text, styles['BodyText']))
                     story.append(Spacer(1, 12))
-        
+
         if references:
             story.append(PageBreak())
             story.append(Paragraph("References", styles['Heading2']))
@@ -842,7 +842,7 @@ def generate_docx(query, data, summary, deep_research=False):
                     formatted_text = re.sub(r"\*\*(.*?)\*\*", r"\1", section)
                     p = doc.add_paragraph(formatted_text)
                     p.paragraph_format.space_after = Pt(12)
-        
+
         if references:
             doc.add_page_break()
             doc.add_heading("References", level=2)
@@ -1371,7 +1371,7 @@ if st.session_state.research_data and st.session_state.response and not st.sessi
             content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)
             # Ensure markdown rendering works
             st.markdown(content)
-    
+
     # Show metadata
     meta = parsed.get("metadata", {})
     if meta.get("model"):

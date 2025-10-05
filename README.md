@@ -1,10 +1,10 @@
-# 🔬 Deep Research AI Agent
+# Deep Research AI Agent
 
-> **Your Personal AI Research Assistant** - Generate comprehensive research reports on any topic in seconds!
+Generate comprehensive research reports on any topic in seconds.
 
 ## 🌟 What is This?
 
-Deep Research AI Agent is a **free web application** that helps you research any topic and generates professional research reports automatically. Simply type in what you want to research, and our AI agents will:
+Deep Research AI Agent is a web application that helps you research any topic and generates professional research reports automatically. Simply type in what you want to research, and our AI agents will:
 - 🔍 Search the web for reliable information
 - 📊 Analyze and synthesize the data
 - 📝 Create a structured research report
@@ -12,9 +12,9 @@ Deep Research AI Agent is a **free web application** that helps you research any
 
 **No technical knowledge required!** Just visit the website and start researching.
 
-## 🚀 Try It Now!
+## Live Demo
 
-**Live Demo:** [https://deep-research-ai-agent.streamlit.app/](https://deep-research-ai-agent.streamlit.app/)
+[https://deep-research-ai-agent.streamlit.app/](https://deep-research-ai-agent.streamlit.app/)
 
 ## 🎥 See It In Action
 
@@ -24,9 +24,8 @@ Deep Research AI Agent is a **free web application** that helps you research any
 
 ### 🤖 Intelligent Research System
 - **Dual AI Agents**: One searches the web, another writes your report
-- **Smart Source Filtering**: Excludes low-quality sources (social media, etc.)
 - **Multi-Language Support**: Generate reports in English, Spanish, or German
-- **Free AI Models**: Uses OpenRouter's free models (10+ requests/day)
+- **Model Selection**: Choose models via OpenRouter
 
 ### 📝 Customizable Output
 - **Writing Styles**: Academic, Business, Technical, or Casual
@@ -36,35 +35,36 @@ Deep Research AI Agent is a **free web application** that helps you research any
 
 ### 🎨 User-Friendly Interface
 - **No Login Required**: Start researching immediately
-- **API Key Management**: Built-in secure key storage
 - **Progress Tracking**: Real-time updates as your research generates
-- **Dark Theme**: Easy on the eyes for extended use
 - **Mobile Responsive**: Works on phones, tablets, and desktops
 
 ### 🔧 Advanced Features
 - **Deep Research Mode**: For comprehensive, academic-style papers
-- **Model Selection**: Choose from multiple free AI models
-- **Performance Metrics**: See model speed and quality
+- **Model Selection**: Choose from multiple models
 - **Duplicate Detection**: Automatically removes redundant content
-- **Markdown Rendering**: Proper formatting with bold, lists, and more
+
+## Architecture (agent‑like)
+
+- Orchestrated with LangGraph as a two‑node state machine:
+  - `research` → gathers sources via Tavily (with domain filtering)
+  - `draft` → composes structured Markdown based on style/language/citations
+- Post‑processing normalizes lists, paragraph spacing, and references across PDF/Word/Markdown/Text.
 
 ## 🎯 Perfect For
 
 - 📚 **Students**: Research papers, essays, assignments
-- 💼 **Professionals**: Market research, industry analysis, reports
 - 📰 **Writers**: Article research, fact-checking, content ideas
-- 🔬 **Researchers**: Literature reviews, topic exploration
 - 🎓 **Educators**: Lesson planning, curriculum development
 - 💡 **Anyone Curious**: Learn about any topic quickly!
 
-## 💻 For Developers
+## For Developers
 
 ### Quick Setup
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/saksham-jain177/AI-Agent-based-Deep-Research.git
-   cd AI-Agent-based-Deep-Research
+    git clone https://github.com/saksham-jain177/AI-Agent-based-Deep-Research.git
+    cd AI-Agent-based-Deep-Research
    ```
 
 2. **Install Python 3.8+ and dependencies:**
@@ -72,9 +72,9 @@ Deep Research AI Agent is a **free web application** that helps you research any
    pip install -r requirements.txt
    ```
 
-3. **Get your free API keys:**
+3. **Get API keys:**
    - [Tavily API](https://tavily.com) - For web search (free tier available)
-   - [OpenRouter API](https://openrouter.ai) - For AI models (free models included)
+   - [OpenRouter API](https://openrouter.ai) - For AI models
 
 4. **Create `.env` file:**
    ```
@@ -92,9 +92,8 @@ Deep Research AI Agent is a **free web application** that helps you research any
 - **Frontend**: Streamlit (Python web framework)
 - **AI Framework**: LangChain & LangGraph
 - **Web Search**: Tavily API
-- **LLM Provider**: OpenRouter (free models)
+- **LLM Provider**: OpenRouter
 - **Document Generation**: ReportLab (PDF), python-docx (Word)
-- **Styling**: Custom CSS with dark theme
 
 ### Project Structure
 
@@ -108,34 +107,15 @@ AI-Agent-based-Deep-Research/
 └── .env               # API keys (create this)
 ```
 
-## 🚀 Deploy Your Own
+## Deploy your own instance
 
-### Streamlit Cloud (Recommended - Free)
+### If you'd like to deploy your own version of this app with customizations with Streamlit Cloud : 
 
 1. Fork this repository
 2. Visit [share.streamlit.io](https://share.streamlit.io)
 3. Connect your GitHub account
 4. Deploy your forked repo
 5. Add API keys in Streamlit's Secrets (Settings → Secrets)
-
-### Other Platforms
-
-- **Render**: Free tier available, supports Python apps
-- **Railway**: One-click deploy with environment variables
-- **Heroku**: Free tier discontinued, but paid plans work
-- **Local Server**: Run on your own computer or VPS
-
-## 🔮 Upcoming Features
-
-Based on user feedback, we're working on:
-
-- 🧠 **Memory System**: Remember your research history
-- 🔄 **Auto-Update**: Refresh research with latest information
-- 📊 **Data Visualization**: Charts and graphs in reports
-- 🌐 **More Languages**: French, Chinese, Japanese, etc.
-- 📱 **Mobile App**: Native iOS/Android applications
-- 🤝 **Collaboration**: Share research with teams
-- 📈 **Analytics**: Track research trends and insights
 
 ## 🤝 Contributing
 
@@ -149,7 +129,7 @@ We welcome contributions! Here's how you can help:
 
 ### Development Setup
 
-```bash
+      ```bash
 # Clone your fork
 git clone https://github.com/YOUR_USERNAME/AI-Agent-based-Deep-Research.git
 
@@ -163,23 +143,10 @@ pip install -r requirements.txt
 # Make your changes and test
 streamlit run app.py
 ```
-
-## 📊 Statistics
-
-- ✅ **100% Free** to use with free API tiers
-- 🚀 **< 30 seconds** average research time
-- 📄 **5+ export formats** supported
-- 🌍 **3 languages** available
-- 🤖 **10+ AI models** to choose from
-- ⭐ **500+ GitHub stars** (and growing!)
-
 ## ❓ FAQ
 
-**Q: Is this really free?**
-A: Yes! The app uses free tiers of APIs. You get ~10 free researches per day.
-
 **Q: Do I need coding knowledge?**
-A: No! Just visit the website and start researching.
+A: No. Open the web app, enter a query, and click Run.
 
 **Q: Can I use this for academic work?**
 A: Yes, but always verify sources and cite appropriately. This is a research tool, not a substitute for critical thinking.
@@ -188,18 +155,10 @@ A: Yes, but always verify sources and cite appropriately. This is a research too
 A: We search reputable sources and filter out social media. However, always fact-check important information.
 
 **Q: Can I customize the AI model?**
-A: Yes! Choose from multiple free models in the sidebar.
+A: Yes. Choose a model from the sidebar (OpenRouter).
 
 **Q: Is my data private?**
 A: We don't store your searches. API providers may have their own policies.
-
-## 🙏 Acknowledgments
-
-Built with amazing open-source projects:
-- [Streamlit](https://streamlit.io) - Web framework
-- [LangChain](https://langchain.com) - AI orchestration  
-- [Tavily](https://tavily.com) - Web search API
-- [OpenRouter](https://openrouter.ai) - LLM gateway
 
 ## 📜 License
 
@@ -214,8 +173,6 @@ MIT License - Use freely for personal or commercial projects!
 
 <div align="center">
   
-**Made with ❤️ by the open-source community**
-
 ⭐ **Star this repo** if you find it helpful!
 
 </div>
