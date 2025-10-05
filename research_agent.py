@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 from langchain.tools import Tool
 from tavily import TavilyClient
+from urllib.parse import urlparse
 
 # Load environment variables from .env
 load_dotenv()
@@ -19,6 +20,9 @@ def research_web(query, deep_research=False):
             }]
 
         tavily_client = TavilyClient(api_key=api_key)
+        # Domain filtering (avoid social chatter like reddit by default)
+        excluded_env = os.getenv("EXCLUDE_DOMAINS", "reddit.com,x.com,twitter.com,tiktok.com,pinterest.com,instagram.com")
+        EXCLUDED_DOMAINS = {d.strip().lower() for d in excluded_env.split(',') if d.strip()}
         # Adjust max_results based on deep_research mode
         max_results = 30 if deep_research else 5
         data = []
@@ -26,7 +30,13 @@ def research_web(query, deep_research=False):
 
         # Initial query
         results = tavily_client.search(query, max_results=max_results)
-        initial_data = [{"title": r["title"], "content": r["content"], "url": r["url"]} for r in results["results"]]
+        initial_data = []
+        for r in results["results"]:
+            u = r.get("url") or ""
+            domain = urlparse(u).netloc.lower()
+            if any(domain.endswith(ex) for ex in EXCLUDED_DOMAINS):
+                continue
+            initial_data.append({"title": r.get("title",""), "content": r.get("content",""), "url": u})
         for item in initial_data:
             if item["url"] not in url_set:
                 data.append(item)
@@ -45,7 +55,13 @@ def research_web(query, deep_research=False):
                 if len(data) >= 20:
                     break
                 results = tavily_client.search(variant_query, max_results=max_results)
-                additional_data = [{"title": r["title"], "content": r["content"], "url": r["url"]} for r in results["results"]]
+                additional_data = []
+                for r in results["results"]:
+                    u = r.get("url") or ""
+                    domain = urlparse(u).netloc.lower()
+                    if any(domain.endswith(ex) for ex in EXCLUDED_DOMAINS):
+                        continue
+                    additional_data.append({"title": r.get("title",""), "content": r.get("content",""), "url": u})
                 for item in additional_data:
                     if item["url"] not in url_set:
                         data.append(item)

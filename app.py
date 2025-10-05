@@ -3,7 +3,7 @@ from main import run_research  # Import run_research from main.py
 from draft_agent import format_citation, STYLE_TEMPLATES  # Add this import
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT
 import io
@@ -265,10 +265,8 @@ st.markdown("""
         box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
     }
     
-    /* Hide the default st.selectbox */
-    .stSelectbox {
-        display: none !important;
-    }
+    /* Ensure selectboxes are visible (we use native Streamlit controls) */
+    .stSelectbox { display: block !important; }
     
     /* Sidebar styling */
     .stSidebar {
@@ -574,6 +572,14 @@ def format_references_section(refs_text):
 # Function to generate PDF with proper formatting and cover page
 def generate_pdf(query, data, summary, deep_research=False):
     """Generate a PDF report with query, data, and summary in a research paper format."""
+    # Parse JSON if needed
+    parsed = None
+    if isinstance(summary, str) and summary.strip().startswith('{'):
+        try:
+            parsed = json.loads(summary)
+        except:
+            pass
+    
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -633,164 +639,221 @@ def generate_pdf(query, data, summary, deep_research=False):
         story.append(Paragraph(item['content'], styles['BodyText']))
         story.append(Spacer(1, 12))
 
-    # Process the content sections
-    sections = summary.split("\n\n")
-    references = []
-    current_heading = None
-    
-    for section in sections:
-        if section.startswith("**") and section.endswith("**"):
-            current_heading = section.strip("**").rstrip(":")
-            if current_heading == "References":
-                continue
-            story.append(Paragraph(current_heading, styles['Heading2']))
+    # Process content based on format
+    if parsed:
+        # Handle JSON format
+        for section in parsed.get("sections", []):
+            title = section.get("title", "Section")
+            content = section.get("content", "")
+            
+            # Add section title
+            story.append(Paragraph(title, styles['Heading2']))
             story.append(Spacer(1, 12))
-        else:
-            if current_heading == "References":
-                # Collect references for later processing
-                refs = section.split("\n")
-                for ref in refs:
-                    if ref.strip():
-                        references.append(ref.strip())
-            elif current_heading:
-                if current_heading == "Analysis":
-                    # Split into smaller paragraphs for readability
-                    sentences = re.split(r'(?<=[.!?])\s+', section)
-                    new_paragraphs = []
-                    current_paragraph = []
-                    sentence_count = 0
+            
+            # Clean and format content for PDF
+            # Handle both ** and **** for bold (limit to reasonable length to avoid entire paragraphs)
+            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'<b>\1</b>', content)  # Convert **** to bold
+            content = re.sub(r'\*\*([^*]{1,100}?)\*\*', r'<b>\1</b>', content)  # Convert ** to bold
+            
+            # Split into paragraphs
+            paragraphs = content.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    # Clean up any markdown artifacts
+                    para = para.replace('\\n', ' ')
+                    # Only split if we have a true numbered list (multiple items starting with number)
+                    # Check if paragraph contains multiple numbered items at line start
+                    lines = para.split('\n')
+                    numbered_lines = [l for l in lines if re.match(r'^\d+\.\s', l.strip())]
                     
-                    max_sentences = 4 if len(sentences) < 15 else 6
-                    
-                    for sentence in sentences:
-                        current_paragraph.append(sentence)
-                        sentence_count += 1
-                        if sentence_count >= max_sentences:
-                            new_paragraphs.append(' '.join(current_paragraph))
-                            current_paragraph = []
-                            sentence_count = 0
-                    
-                    if current_paragraph:
-                        new_paragraphs.append(' '.join(current_paragraph))
-                    
-                    for paragraph in new_paragraphs:
-                        if paragraph.strip():
-                            story.append(Paragraph(paragraph.strip(), styles['BodyText']))
-                            story.append(Spacer(1, 12))
-                elif current_heading == "Key Findings":
-                    findings = re.split(r'(?=\d+\.)', section)
-                    for finding in findings:
-                        if finding.strip():
-                            story.append(Paragraph(finding.strip(), styles['BodyText']))
-                            story.append(Spacer(1, 6))
-                else:
+                    if len(numbered_lines) >= 2:  # It's a real list
+                        # Split and add numbered items separately
+                        for line in lines:
+                            if line.strip():
+                                story.append(Paragraph(line.strip(), styles['BodyText']))
+                                if re.match(r'^\d+\.\s', line.strip()):
+                                    story.append(Spacer(1, 12))  # Extra space after numbered items
+                    else:
+                        # Not a list, just a paragraph that might contain numbers
+                        story.append(Paragraph(para.strip(), styles['BodyText']))
+                        story.append(Spacer(1, 12))
+        
+        # Add references if present
+        refs = parsed.get("references", [])
+        if refs:
+            story.append(PageBreak())
+            story.append(Paragraph("References", styles['Heading2']))
+            story.append(Spacer(1, 12))
+            for i, ref in enumerate(refs, 1):
+                ref_para = Paragraph(f"{i}. {ref}", styles['Reference'])
+                story.append(ref_para)
+    else:
+        # Fallback to old text processing
+        sections = summary.split("\n\n") if isinstance(summary, str) else []
+        references = []
+        current_heading = None
+        
+        for section in sections:
+            if section.startswith("**") and section.endswith("**"):
+                current_heading = section.strip("**").rstrip(":")
+                if current_heading == "References":
+                    continue
+                story.append(Paragraph(current_heading, styles['Heading2']))
+                story.append(Spacer(1, 12))
+            else:
+                if current_heading == "References":
+                    refs = section.split("\n")
+                    for ref in refs:
+                        if ref.strip():
+                            references.append(ref.strip())
+                elif current_heading:
                     formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
-                    formatted_text = formatted_text.replace("**", "")
                     story.append(Paragraph(formatted_text, styles['BodyText']))
                     story.append(Spacer(1, 12))
-
-    # Add References section at the end
-    if references:
-        story.append(Paragraph("References", styles['Heading2']))
-        story.append(Spacer(1, 12))
         
-        for i, ref in enumerate(references, 1):
-            formatted_ref = format_reference_for_pdf(ref)
-            if formatted_ref:
-                ref_para = Paragraph(
-                    f"{i}. {formatted_ref}",
-                    styles['Reference']
-                )
-                story.append(ref_para)
+        if references:
+            story.append(PageBreak())
+            story.append(Paragraph("References", styles['Heading2']))
+            story.append(Spacer(1, 12))
+            for i, ref in enumerate(references, 1):
+                formatted_ref = format_reference_for_pdf(ref)
+                if formatted_ref:
+                    ref_para = Paragraph(f"{i}. {formatted_ref}", styles['Reference'])
+                    story.append(ref_para)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     buffer.seek(0)
     return buffer
 
+# Helper function to add text with bold formatting to Word paragraphs
+def _add_text_with_bold(paragraph, text):
+    """Add text to a Word paragraph with bold markdown formatting."""
+    import re
+    # Split on bold markers, but limit to reasonable length spans
+    parts = re.split(r'(\*\*[^*]{1,100}?\*\*)', text)
+    for part in parts:
+        if part.startswith('**') and part.endswith('**'):
+            # Bold text
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        elif part:
+            # Regular text
+            paragraph.add_run(part)
+
 # Function to generate Word document
 def generate_docx(query, data, summary, deep_research=False):
     """Generate a Word document with query, data, and summary."""
+    # Parse JSON if needed
+    parsed = None
+    if isinstance(summary, str) and summary.strip().startswith('{'):
+        try:
+            parsed = json.loads(summary)
+        except:
+            pass
+    
     doc = Document()
     doc.add_heading("Deep Research AI Agent Report", 0)
     doc.add_paragraph(f"Query: {query}")
     doc.add_paragraph(f"Date: {datetime.date.today().strftime('%B %d, %Y')}")
-    doc.add_paragraph(f"Author: [Your Name]")
+    doc.add_paragraph(f"Author: Deep Research AI Agent")
     doc.add_paragraph(f"OpenRouter Status: {'Operational' if check_openrouter_status() else 'Down'}")
     doc.add_paragraph(f"Mode: {'Deep Research' if deep_research else 'Quick Research'}")
     
     # Research Summary Section
     doc.add_heading("Research Summary", level=1)
-    for item in data:
-        p = doc.add_paragraph()
-        p.add_run(f"• {item['title']}").bold = True
-        doc.add_paragraph(item['content'])
-        doc.add_paragraph(f"Source: {item['url']}")
-        doc.add_paragraph()  # Add spacing
+    if data:
+        for item in data:
+            p = doc.add_paragraph()
+            p.add_run(f"• {item['title']}").bold = True
+            doc.add_paragraph(item['content'])
+            doc.add_paragraph(f"Source: {item['url']}")
+            doc.add_paragraph()  # Add spacing
 
-    # Process other sections
-    sections = summary.split("\n\n")
-    current_heading = None
-    references = []
-    
-    for section in sections:
-        if section.startswith("**") and section.endswith("**"):
-            current_heading = section.strip("**").rstrip(":")
-            if current_heading != "References":
-                doc.add_heading(current_heading, level=2)
-        else:
-            if current_heading == "References":
-                # Collect references for later processing
-                refs = section.split("\n")
-                for ref in refs:
-                    if ref.strip():
-                        references.append(ref.strip())
-            elif current_heading == "Analysis":
-                # Split into smaller paragraphs for readability
-                sentences = re.split(r'(?<=[.!?])\s+', section)
-                new_paragraphs = []
-                current_paragraph = []
-                sentence_count = 0
-                
-                max_sentences = 4 if len(sentences) < 15 else 6
-                
-                for sentence in sentences:
-                    current_paragraph.append(sentence)
-                    sentence_count += 1
-                    if sentence_count >= max_sentences:
-                        new_paragraphs.append(' '.join(current_paragraph))
-                        current_paragraph = []
-                        sentence_count = 0
-                
-                if current_paragraph:
-                    new_paragraphs.append(' '.join(current_paragraph))
-                
-                for paragraph in new_paragraphs:
-                    if paragraph.strip():
-                        p = doc.add_paragraph(paragraph.strip())
+    # Process content based on format
+    if parsed:
+        # Handle JSON format
+        for section in parsed.get("sections", []):
+            title = section.get("title", "Section")
+            content = section.get("content", "")
+            
+            # Add section heading
+            doc.add_heading(title, level=2)
+            
+            # First normalize **** to ** for consistent handling (limit to reasonable length)
+            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
+            
+            # Split into paragraphs
+            paragraphs = content.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    # Clean up any escaped newlines
+                    para = para.replace('\\n', ' ')
+                    # Check if this is a real numbered list (multiple numbered items)
+                    lines = para.split('\n')
+                    numbered_lines = [l for l in lines if re.match(r'^\d+\.\s', l.strip())]
+                    
+                    if len(numbered_lines) >= 2:  # It's a real list
+                        # Add each line as a separate paragraph
+                        for line in lines:
+                            if line.strip():
+                                p = doc.add_paragraph()
+                                # Parse bold text
+                                _add_text_with_bold(p, line.strip())
+                                if re.match(r'^\d+\.\s', line.strip()):
+                                    p.paragraph_format.space_after = Pt(18)  # Extra spacing for numbered items
+                                else:
+                                    p.paragraph_format.space_after = Pt(12)
+                    else:
+                        # Not a list, just a regular paragraph
+                        p = doc.add_paragraph()
+                        # Parse bold text
+                        _add_text_with_bold(p, para.strip())
                         p.paragraph_format.space_after = Pt(12)
-            elif current_heading == "Key Findings":
-                findings = re.split(r'(?=\d+\.)', section)
-                for finding in findings:
-                    if finding.strip():
-                        p = doc.add_paragraph(finding.strip())
-                        p.paragraph_format.space_after = Pt(6)
-            else:
-                formatted_text = re.sub(r"\*\*(.*?)\*\*", r"\1", section)
-                p = doc.add_paragraph(formatted_text)
-                p.paragraph_format.space_after = Pt(12)
-
-    # Add References section at the end
-    if references:
-        doc.add_heading("References", level=2)
         
-        for i, ref in enumerate(references, 1):
-            formatted_ref = format_reference_for_pdf(ref)
-            if formatted_ref:
+        # Add references
+        refs = parsed.get("references", [])
+        if refs:
+            doc.add_page_break()
+            doc.add_heading("References", level=2)
+            for i, ref in enumerate(refs, 1):
                 p = doc.add_paragraph()
                 p.paragraph_format.left_indent = Inches(0.5)
                 p.paragraph_format.first_line_indent = Inches(-0.5)
                 p.paragraph_format.space_after = Pt(12)
-                p.add_run(f"{i}. {formatted_ref}")
+                p.add_run(f"{i}. {ref}")
+    else:
+        # Fallback to old text processing
+        sections = summary.split("\n\n") if isinstance(summary, str) else []
+        current_heading = None
+        references = []
+        
+        for section in sections:
+            if section.startswith("**") and section.endswith("**"):
+                current_heading = section.strip("**").rstrip(":")
+                if current_heading != "References":
+                    doc.add_heading(current_heading, level=2)
+            else:
+                if current_heading == "References":
+                    refs = section.split("\n")
+                    for ref in refs:
+                        if ref.strip():
+                            references.append(ref.strip())
+                elif current_heading:
+                    formatted_text = re.sub(r"\*\*(.*?)\*\*", r"\1", section)
+                    p = doc.add_paragraph(formatted_text)
+                    p.paragraph_format.space_after = Pt(12)
+        
+        if references:
+            doc.add_page_break()
+            doc.add_heading("References", level=2)
+            for i, ref in enumerate(references, 1):
+                formatted_ref = format_reference_for_pdf(ref)
+                if formatted_ref:
+                    p = doc.add_paragraph()
+                    p.paragraph_format.left_indent = Inches(0.5)
+                    p.paragraph_format.first_line_indent = Inches(-0.5)
+                    p.paragraph_format.space_after = Pt(12)
+                    p.add_run(f"{i}. {formatted_ref}")
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -842,6 +905,22 @@ def _render_small_text(text: str):
         p_clean = p.replace("\n", " ")
         html_blocks.append(f"<p style='margin:0 0 0.75rem 0;'>{p_clean}</p>")
     st.markdown("".join(html_blocks), unsafe_allow_html=True)
+
+# Light cleanup for raw source content coming from the web
+def _clean_source_text(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Drop common 'X min read' fragments
+    t = re.sub(r"\b\d+\s*min\s*read\b", "", t, flags=re.IGNORECASE)
+    # Replace lonely vertical bars used as separators with bullets
+    t = re.sub(r"\s*\|\s*", " • ", t)
+    # Ensure space after punctuation
+    t = re.sub(r"([\.,;:])(?!\s)", r"\1 ", t)
+    # Collapse extra spaces
+    t = re.sub(r"\s{2,}", " ", t)
+    # Preserve paragraphs
+    return t
 
 
 # API Keys gate & configuration
@@ -986,7 +1065,7 @@ free_models = [m["id"] for m in free_models_meta]
 if not free_models:
     # Fallback curated set
     free_models_meta = [
-        {"id": "x-ai/grok-4-fast:free", "free": True, "context": 2_000_000},
+        {"id": "x-ai/grok-4-fast:free", "free": True, "context": None},
         {"id": "deepseek/deepseek-r1:free", "free": True, "context": None},
         {"id": "deepseek/deepseek-v3:free", "free": True, "context": None},
         {"id": "qwen/qwen2.5-7b-instruct:free", "free": True, "context": None},
@@ -994,7 +1073,12 @@ if not free_models:
     free_models = [m["id"] for m in free_models_meta]
 
 st.sidebar.header("Model")
-selected_model = st.sidebar.selectbox("OpenRouter model (free preferred)", free_models, index=(free_models.index(DEFAULT_MODEL) if DEFAULT_MODEL in free_models else 0))
+selected_model = st.sidebar.selectbox(
+    "OpenRouter model (free preferred)",
+    options=free_models,
+    index=(free_models.index(DEFAULT_MODEL) if DEFAULT_MODEL in free_models else 0),
+    help="Select a model to use for drafting."
+)
 os.environ["OPENROUTER_MODEL"] = selected_model
 
 # Quick micro-benchmark for latency/throughput
@@ -1044,6 +1128,7 @@ if st.sidebar.button("Benchmark model", help="Measures time to first token and t
 if bench:
     st.sidebar.metric("Latency", f"{bench['latency_s']} s")
     st.sidebar.metric("Throughput", f"{bench['throughput_tps']} tkn/s")
+    st.sidebar.caption("Benchmarks are approximate and cached.")
 elif ctx_len:
     st.sidebar.caption(f"Context: {ctx_len:,} tokens (reported)")
 else:
@@ -1153,23 +1238,42 @@ with st.expander("📋 Writing Style Preview"):
     }
     st.code(format_citation(example_citation, citation_format))
 
-# Research button logic (disabled if keys missing)
-run_disabled = (len(missing_keys) > 0) or st.session_state.get("__busy__", False)
-if run_disabled:
+# Initialize control flags
+if "__busy__" not in st.session_state:
+    st.session_state["__busy__"] = False
+if "__trigger__" not in st.session_state:
+    st.session_state["__trigger__"] = False
+
+# Research button logic (disabled if keys missing or busy)
+run_disabled = (len(missing_keys) > 0) or st.session_state["__busy__"]
+if len(missing_keys) > 0:
     st.info("Add your API keys to enable research.")
+
 if st.button("Run Research", disabled=run_disabled):
+    # Phase 1: mark busy and trigger the job, then rerun to render disabled state immediately
+    st.session_state["__busy__"] = True
+    st.session_state["__trigger__"] = True
+    try:
+        st.rerun()
+    except Exception:
+        pass
+
+# Phase 2: perform the job when triggered
+if st.session_state.get("__trigger__"):
     if not query.strip():
         st.error("Please enter a valid research query.")
+        st.session_state["__busy__"] = False
+        st.session_state["__trigger__"] = False
     elif not check_openrouter_status():
         st.error("OpenRouter is currently down. Please try again later.")
+        st.session_state["__busy__"] = False
+        st.session_state["__trigger__"] = False
     else:
         try:
             with st.spinner("Processing your request..."):
                 # Initialize progress bar and status
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                # Disable Run button while in progress by setting a session flag
-                st.session_state["__busy__"] = True
 
                 # Step 1: Fetch research data
                 status_text.text("Step 1/3: Fetching research data... 🔍")
@@ -1197,37 +1301,11 @@ if st.button("Run Research", disabled=run_disabled):
                     # Step 3: Generating PDF
                     status_text.text("Step 3/3: Generating PDF report... 📄")
                     st.success("Research completed! 🎉", icon="✅")
-                    st.subheader("Structured Summary 📝")
-
-                    # Display summary with structured JSON
-                    try:
-                        parsed = json.loads(response)
-                    except Exception:
-                        parsed = {"sections": [{"title": "Response", "content": response}], "references": []}
-
-                    st.write("### Research Summary 📚")
-                    with st.expander("View Research Summary", expanded=True):
-                        for item in research_data:
-                            st.markdown(f"<p style='font-weight:600; font-size:1.05rem; margin:0 0 0.25rem 0;'>{html.escape(item['title'])}</p>", unsafe_allow_html=True)
-                            _render_small_text(item['content'])
-                            st.markdown(f"[Source]({item['url']})")
-                            st.markdown("---")
-
-                    st.write("### Detailed Analysis 📝")
-                    for sec in parsed.get("sections", []):
-                        with st.expander(sec.get("title","Section"), expanded=True):
-                            _render_small_text(sec.get("content",""))
-
-                    refs = parsed.get("references", [])
-                    if refs:
-                        with st.expander("References", expanded=True):
-                            for i, ref in enumerate(refs, 1):
-                                st.markdown(f"{i}. {ref}")
-
+                    
                     # Calculate word count and page estimate
                     word_count = len(response.split())
                     page_estimate = word_count // 400 + 1  # Rough estimate: ~400 words per page
-                    st.info(f"Summary contains {word_count} words, estimated at {page_estimate} pages.")
+                    
                     progress_bar.progress(85)
 
                     # Store results in session state
@@ -1235,13 +1313,6 @@ if st.button("Run Research", disabled=run_disabled):
                     st.session_state.response = response
                     st.session_state.pdf_buffer = generate_pdf(query, research_data, response, deep_research=deep_research)
                     st.session_state.word_buffer = generate_docx(query, research_data, response, deep_research=deep_research)
-
-                    # Interactive Research Data Display
-                    st.write("### Research Data 📚")
-                    for item in research_data:
-                        with st.expander(item['title']):
-                            st.write(item['content'])
-                            st.markdown(f"[Visit Source]({item['url']})")
 
         except Exception as e:
             st.error(f"Failed after retries: {str(e)}")
@@ -1251,6 +1322,84 @@ if st.button("Run Research", disabled=run_disabled):
             progress_bar.empty()  # Clear progress bar
             status_text.empty()  # Clear status text
             st.session_state["__busy__"] = False
+            st.session_state["__trigger__"] = False
+            # Don't rerun here - it causes the summary to disappear
+
+# Display the research summary if available (persists after rerun)
+if st.session_state.research_data and st.session_state.response and not st.session_state.get("__busy__", False):
+    # Re-display the summary that was generated
+    try:
+        parsed = json.loads(st.session_state.response)
+    except Exception:
+        parsed = {"sections": [{"title": "Response", "content": st.session_state.response}], "references": []}
+    
+    st.subheader("Structured Summary 📝")
+    
+    # Remove duplicate sections by tracking seen titles
+    seen_titles = set()
+    unique_sections = []
+    for section in parsed.get("sections", []):
+        title = section.get("title", "")
+        if title not in seen_titles:
+            seen_titles.add(title)
+            unique_sections.append(section)
+    
+    st.write("### Research Summary 📚")
+    with st.expander("View Research Summary", expanded=True):
+        for item in st.session_state.research_data:
+            st.markdown(f"#### {item['title']}")
+            # Clean and render content - ensure markdown works for ALL languages
+            content = _clean_source_text(item['content'])
+            # Fix asterisk formatting universally
+            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
+            content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)  # Also handle ***
+            # Render as markdown with proper formatting
+            st.markdown(content)
+            st.markdown(f"[Source]({item['url']})")
+            st.markdown("---")
+    
+    st.write("### Detailed Analysis 📝")
+    for section in unique_sections:
+        title = section.get("title", "")
+        content = section.get("content", "")
+        
+        with st.expander(f"📖 {title}", expanded=True):
+            # Clean content universally for all languages
+            content = re.sub(r'^##\s+', '', content)  # Remove ## at start
+            # Fix various asterisk patterns
+            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
+            content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)
+            # Ensure markdown rendering works
+            st.markdown(content)
+    
+    # Show metadata
+    meta = parsed.get("metadata", {})
+    if meta.get("model"):
+        st.caption(f"Model: {meta['model']} • Style: {meta.get('writing_style','-')} • Lang: {meta.get('language','-')} • Citations: {meta.get('citation_format','-')}")
+    
+    # Show references
+    refs = parsed.get("references", [])
+    if refs:
+        with st.expander("References", expanded=True):
+            for i, ref in enumerate(refs, 1):
+                st.markdown(f"{i}. {ref}")
+    
+    # Show word count info
+    word_count = len(st.session_state.response.split())
+    page_estimate = word_count // 400 + 1
+    st.info(f"Summary contains {word_count} words, estimated at {page_estimate} pages.")
+    
+    # Add Research Data section
+    st.write("### Research Data 📚")
+    for item in st.session_state.research_data:
+        with st.expander(item['title']):
+            # Render content with markdown support for all languages
+            content = item['content']
+            # Fix asterisk patterns
+            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
+            content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)
+            st.markdown(content)
+            st.markdown(f"[Visit Source]({item['url']})")
 
 # Display download options if research data is available
 if st.session_state.research_data and st.session_state.response:
@@ -1282,9 +1431,30 @@ if st.session_state.research_data and st.session_state.response:
         )
     elif selected_format == "Markdown":
         st.caption("Download as a Markdown file, great for lightweight formatting and version control.")
+        # Convert JSON response to pretty Markdown
+        try:
+            parsed = json.loads(st.session_state.response)
+            lines = []
+            lines.append(f"# {query}\n")
+            for sec in parsed.get("sections", []):
+                title = sec.get("title","Section")
+                content = sec.get("content","")
+                # Add extra newlines for numbered lists
+                if re.search(r'\d+\.\s', content):
+                    # Split and rejoin numbered items with double newlines
+                    content = re.sub(r'(\d+\.\s)', r'\n\1', content)
+                lines.append(f"\n## {title}\n{content}\n")
+            refs = parsed.get("references", [])
+            if refs:
+                lines.append("\n## References\n")
+                for i, r in enumerate(refs, 1):
+                    lines.append(f"{i}. {r}")
+            md_data = "\n".join(lines)
+        except Exception:
+            md_data = st.session_state.response
         st.download_button(
             label="Download Markdown 📥",
-            data=st.session_state.response,
+            data=md_data,
             file_name="research_summary.md",
             mime="text/markdown"
         )
@@ -1298,9 +1468,57 @@ if st.session_state.research_data and st.session_state.response:
         )
     else:  # Text
         st.caption("Download as a plain text file, suitable for simple viewing or copying.")
+        # Convert JSON to plain text
+        try:
+            parsed = json.loads(st.session_state.response)
+            text_lines = []
+            text_lines.append(f"RESEARCH SUMMARY\n{'='*50}\n")
+            text_lines.append(f"Query: {query}\n")
+            text_lines.append(f"Date: {datetime.date.today().strftime('%B %d, %Y')}\n")
+            
+            # Add metadata
+            meta = parsed.get("metadata", {})
+            if meta:
+                text_lines.append(f"\nModel: {meta.get('model', 'N/A')}")
+                text_lines.append(f"Writing Style: {meta.get('writing_style', 'N/A')}")
+                text_lines.append(f"Language: {meta.get('language', 'N/A')}")
+                text_lines.append(f"Citation Format: {meta.get('citation_format', 'N/A')}\n")
+            
+            text_lines.append(f"\n{'='*50}\n")
+            
+            # Add sections
+            for section in parsed.get("sections", []):
+                title = section.get("title", "Section")
+                content = section.get("content", "")
+                
+                text_lines.append(f"\n{title.upper()}\n{'-'*len(title)}\n")
+                
+                # Clean content from markdown
+                content = re.sub(r'\*\*(.*?)\*\*', r'\1', content)
+                
+                # Format numbered lists properly
+                if re.search(r'\d+\.\s', content):
+                    # Add newlines before each number
+                    content = re.sub(r'(\d+\.\s)', r'\n\1', content)
+                
+                text_lines.append(content)
+                text_lines.append("\n")
+            
+            # Add references
+            refs = parsed.get("references", [])
+            if refs:
+                text_lines.append(f"\nREFERENCES\n{'-'*10}\n")
+                for i, ref in enumerate(refs, 1):
+                    text_lines.append(f"{i}. {ref}\n")
+            
+            txt_data = "\n".join(text_lines)
+        except Exception:
+            # Fallback if JSON parsing fails
+            txt_data = st.session_state.response
+        
         st.download_button(
             label="Download Text 📥",
-            data=st.session_state.response,
+            data=txt_data,
             file_name="research_summary.txt",
             mime="text/plain"
         )
@@ -1312,4 +1530,3 @@ if st.sidebar.button("Submit Feedback"):
     st.sidebar.success("Thanks for your feedback! 🙏")
     with open("feedback.txt", "a") as f:
         f.write(f"{feedback}\n")
-        

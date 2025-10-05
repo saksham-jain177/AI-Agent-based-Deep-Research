@@ -23,68 +23,56 @@ load_dotenv()
 
 # Lazy LLM init so missing keys don't crash on import
 llm = None
+_llm_cfg = {"api_key": None, "base_url": None, "model": None}
 
 def _get_llm():
     """Return a configured ChatOpenAI instance or None if keys are missing.
     Accepts either OPENROUTER_API_KEY (preferred) or OPENAI_API_KEY with
     OPENAI_BASE_URL. Defaults base_url to OpenRouter if not provided.
     """
-    global llm
-    if llm is not None:
-        return llm
+    global llm, _llm_cfg
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
     base_url = os.getenv("OPENAI_BASE_URL") or "https://openrouter.ai/api/v1"
     model = os.getenv("OPENROUTER_MODEL", "cognitivecomputations/dolphin3.0-r1-mistral-24b:free")
-    try:
-        llm = ChatOpenAI(api_key=api_key, base_url=base_url, model=model)
-        return llm
-    except Exception as e:
-        logging.error(f"Failed to initialize LLM: {type(e).__name__}: {str(e)}")
-        return None
 
-# Writing style templates
+    desired = {"api_key": api_key, "base_url": base_url, "model": model}
+    # Rebuild the LLM client if config changed (e.g., user switched models)
+    if llm is None or any(_llm_cfg.get(k) != v for k, v in desired.items()):
+        try:
+            llm = ChatOpenAI(api_key=api_key, base_url=base_url, model=model)
+            _llm_cfg = desired
+        except Exception as e:
+            logging.error(f"Failed to initialize LLM: {type(e).__name__}: {str(e)}")
+            llm = None
+    return llm
+
+# Writing style templates following industry standards
 STYLE_TEMPLATES = {
     "academic": {
-        "tone": "formal and scholarly",
-        "vocabulary": "academic terminology and precise language",
-        "structure": "rigorous academic structure with clear theoretical foundations"
+        "tone": "formal, objective, and evidence-based",
+        "vocabulary": "discipline-specific terminology, passive voice where appropriate, third-person perspective",
+        "structure": "introduction with thesis, literature review, methodology, findings, discussion, conclusion with citations throughout"
     },
     "business": {
-        "tone": "professional and action-oriented",
-        "vocabulary": "business terminology and clear, direct language",
-        "structure": "executive summary style with actionable insights"
+        "tone": "professional, concise, and results-focused",
+        "vocabulary": "industry jargon, active voice, direct address, action verbs",
+        "structure": "executive summary, key findings upfront, data-driven insights, clear recommendations, ROI focus"
     },
     "technical": {
-        "tone": "precise and technical",
-        "vocabulary": "technical terminology and specific technical concepts",
-        "structure": "systematic technical documentation style"
+        "tone": "precise, detailed, and systematic",
+        "vocabulary": "technical specifications, exact measurements, specialized terminology, unambiguous language",
+        "structure": "abstract, introduction, technical background, implementation details, results, performance metrics, conclusion"
     },
     "casual": {
-        "tone": "conversational and accessible",
-        "vocabulary": "clear, everyday language",
-        "structure": "engaging and easy-to-follow format"
+        "tone": "conversational, engaging, and reader-friendly",
+        "vocabulary": "simple language, contractions allowed, personal pronouns, relatable examples",
+        "structure": "hook introduction, storytelling elements, short paragraphs, bullet points, clear takeaways"
     }
 }
 
-# Citation formatting functions
-def format_citation(item: Dict[str, Any], format_style: str) -> str:
-    """Format citation according to specified style."""
-    title = item.get('title', '')
-    url = item.get('url', '')
-    # Extract domain as publisher
-    publisher = urlparse(url).netloc if url else "Unknown Publisher"
-    # Extract date or use current
-    date = datetime.now().strftime("%Y, %B %d")
-    
-    if format_style == "APA":
-        return f"{title}. ({date}). Retrieved from {url}"
-    elif format_style == "MLA":
-        return f'"{title}." {publisher}, {date}, {url}'
-    elif format_style == "IEEE":
-        return f"[{hash(url) % 100 + 1}] {title}, {publisher}, {date}."
-    return f"{title} - {url}"
+# Note: Citation formatting function moved below with improved standards
 
 def apply_writing_style(prompt: str, style: str) -> str:
     """Apply writing style to prompt template."""
@@ -323,19 +311,84 @@ LANGUAGE_PROMPTS = {
 }
 
 def format_citation(source: Dict[str, str], style: str) -> str:
-    """Format citation based on selected style."""
+    """Format citation based on selected style following industry standards."""
     title = source.get('title', '')
     url = source.get('url', '')
-    date = datetime.now().strftime("%Y, %B %d")
+    # Get current date in appropriate format
+    year = datetime.now().strftime("%Y")
+    full_date = datetime.now().strftime("%B %d, %Y")
+    access_date = datetime.now().strftime("%d %b. %Y")
+    
+    # Extract domain name as publisher/website name
     domain = urlparse(url).netloc
+    # Clean up domain (remove www., .com, etc for cleaner display)
+    site_name = domain.replace('www.', '').split('.')[0].title()
 
     citations = {
-        "APA": f"{title}. ({date}). Retrieved from {url}",
-        "MLA": f'"{title}." {domain}. {date}. Web.',
-        "IEEE": f"[{hash(url) % 100 + 1}] {title}. {domain}. {date}.",
+        # APA 7th Edition: Website Name. (Year, Month Day). Title. URL
+        "APA": f"{site_name}. ({full_date}). {title}. {url}",
+        
+        # MLA 9th Edition: "Title." Website Name, Day Month Year, URL.
+        "MLA": f'"{title}." {site_name}, {full_date}, {url}.',
+        
+        # IEEE: [#] Title, Website Name. Available: URL [Accessed: Date]
+        "IEEE": f"[{hash(url) % 100 + 1}] {title}, {site_name}. Available: {url} [Accessed: {access_date}]",
     }
     
     return citations.get(style, citations["APA"])
+
+# --- Formatting helpers ---
+def sanitize_template_for_markdown(template_text: str) -> str:
+    """Remove anti-Markdown instructions from prompt templates."""
+    if not isinstance(template_text, str):
+        return template_text
+    cleaned = re.sub(r"(?i)do not use markdown formatting.*", "", template_text)
+    return cleaned
+
+def normalize_markdown(text: str) -> str:
+    """Ensure lists/paragraphs have proper line breaks across languages."""
+    if not isinstance(text, str):
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    # Put a newline before each numbered item if multiple items are in one line: "1. a 2. b" -> "1. a\n2. b"
+    t = re.sub(r"(?<=\.)\s+(?=\d+\.)", "\n", t)
+    # Ensure bullets are on separate lines if jammed: "* a * b" -> "* a\n* b"
+    t = re.sub(r"\*\s+(?=\w)", "* ", t)  # normalize bullet spacing
+    t = re.sub(r"(?<=\w)\s\*\s", "\n* ", t)
+    # Collapse excessive blank lines
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t
+
+# Split long analysis into readable paragraphs
+def paragraphize_analysis(text: str, max_sentences: int = 5) -> str:
+    """Language-agnostic paragraphing for Analysis.
+    - Respects existing blank-line breaks
+    - Avoids touching lists (bullets/numbered)
+    - Groups N sentences per paragraph
+    """
+    if not isinstance(text, str):
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    # If there are bullets or numbered list lines, keep as-is
+    if re.search(r"^(\*|\d+\.)\s", t, flags=re.MULTILINE):
+        return re.sub(r"\n{3,}", "\n\n", t)
+    # Already paragraphized
+    if "\n\n" in t:
+        return re.sub(r"\n{3,}", "\n\n", t)
+    # Split on sentence boundaries; broad for multiple languages
+    sentences = re.split(r"(?<=[\.!?。！？])\s+", t)
+    buf, paras = [], []
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        buf.append(s)
+        if len(buf) >= max_sentences:
+            paras.append(" ".join(buf))
+            buf = []
+    if buf:
+        paras.append(" ".join(buf))
+    return "\n\n".join(paras)
 
 # Drafting function with retry logic and deep research support
 def draft_answer(
@@ -374,22 +427,29 @@ def draft_answer(
             # Modify prompts with style and language
             if not deep_research:
                 sections = [
-                    ("Key Findings", apply_writing_style(key_findings_prompt.template, writing_style)),
-                    ("Analysis", apply_writing_style(analysis_prompt.template, writing_style))
+                    ("Key Findings", apply_writing_style(sanitize_template_for_markdown(key_findings_prompt.template), writing_style)),
+                    ("Analysis", apply_writing_style(sanitize_template_for_markdown(analysis_prompt.template), writing_style))
                 ]
             else:
                 sections = [
-                    ("Abstract", apply_writing_style(abstract_prompt.template, writing_style)),
-                    ("Introduction", apply_writing_style(introduction_prompt.template, writing_style)),
-                    ("Literature Review", apply_writing_style(literature_review_prompt.template, writing_style)),
-                    ("Key Findings", apply_writing_style(key_findings_prompt.template, writing_style)),
-                    ("Analysis", apply_writing_style(analysis_prompt.template, writing_style)),
-                    ("Conclusion", apply_writing_style(conclusion_prompt.template, writing_style))
+                    ("Abstract", apply_writing_style(sanitize_template_for_markdown(abstract_prompt.template), writing_style)),
+                    ("Introduction", apply_writing_style(sanitize_template_for_markdown(introduction_prompt.template), writing_style)),
+                    ("Literature Review", apply_writing_style(sanitize_template_for_markdown(literature_review_prompt.template), writing_style)),
+                    ("Key Findings", apply_writing_style(sanitize_template_for_markdown(key_findings_prompt.template), writing_style)),
+                    ("Analysis", apply_writing_style(sanitize_template_for_markdown(analysis_prompt.template), writing_style)),
+                    ("Conclusion", apply_writing_style(sanitize_template_for_markdown(conclusion_prompt.template), writing_style))
                 ]
 
-            # Add language instruction to system message
+            # Add language instruction and markdown formatting to system message
             system_message = f"Please provide the response in {language}. "
-            system_message += f"Use {citation_format} citation format when referencing sources."
+            system_message += f"Use {citation_format} citation format when referencing sources.\n"
+            lang_block = LANGUAGE_PROMPTS.get(language.lower())
+            if lang_block:
+                system_message += lang_block + "\n"
+            system_message += (
+                "Format all sections in valid Markdown using appropriate headings and lists. "
+                "Do not use HTML; use Markdown constructs only."
+            )
 
             response_text = []
             for section_name, prompt_template in sections:
@@ -406,14 +466,23 @@ def draft_answer(
                 
                 if section_name == "Key Findings":
                     section_text = format_key_findings(section_text)
-                # Normalize paragraphs: ensure double newlines between logical paragraphs
-                section_text = re.sub(r"\n{3,}", "\n\n", section_text.strip())
+                # Normalize paragraphs & lists for any language
+                section_text = normalize_markdown(section_text)
+                if section_name == "Analysis":
+                    section_text = paragraphize_analysis(section_text, max_sentences=5)
                 
                 response_text.append({"title": section_name, "content": section_text})
 
+            used_model = os.getenv("OPENROUTER_MODEL") or os.getenv("OPENAI_MODEL") or "unknown"
             result = {
                 "sections": response_text,
-                "references": citations
+                "references": citations,
+                "metadata": {
+                    "model": used_model,
+                    "language": language,
+                    "writing_style": writing_style,
+                    "citation_format": citation_format
+                }
             }
             return json.dumps(result)
 
