@@ -10,3 +10,5 @@ joblib
 reportlab
 python-docx
 tenacity
+chromadb>=0.4.0
+sentence-transformers>=2.2.0

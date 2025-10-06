@@ -880,6 +880,71 @@ else:
 st.sidebar.header("About")
 st.sidebar.write("Dual-agent system using Tavily for research and OpenRouter for drafting with the model of your choosing.")
 st.sidebar.write("Built with LangChain, LangGraph, and Streamlit.")
+
+# ChromaDB Vector Store Toggle and Stats
+st.sidebar.header("🧠 Memory (ChromaDB)")
+
+# Check if vector store is available
+try:
+    from vector_store import get_vector_store
+    vector_store_available = True
+except ImportError:
+    vector_store_available = False
+    st.sidebar.info("Install chromadb and sentence-transformers to enable memory", icon="ℹ️")
+
+if vector_store_available:
+    # Toggle for enabling/disabling vector store
+    enable_vector = st.sidebar.checkbox(
+        "Enable Memory",
+        value=os.getenv("ENABLE_VECTOR_STORE", "false").lower() == "true",
+        help="Use local vector database to remember past research"
+    )
+    
+    if enable_vector:
+        # Set environment variable
+        os.environ["ENABLE_VECTOR_STORE"] = "true"
+        
+        # Get vector store instance
+        try:
+            from vector_store import get_vector_store
+            vs = get_vector_store()
+            
+            # Get stats for current language
+            lang_map = {'English': 'en', 'Spanish': 'es', 'German': 'de'}
+            current_lang = st.session_state.get('language', 'English')
+            lang_code = lang_map.get(current_lang, 'en')
+            
+            stats = vs.get_stats(lang_code)
+            
+            # Display stats
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                st.metric("Active", stats['active'])
+                st.metric("Sources", stats['sources'])
+            with col2:
+                st.metric("Expired", stats['expired'])
+                st.metric("Summaries", stats['summaries'])
+            
+            # Show content type breakdown
+            st.sidebar.caption(f"📰 News: {stats['news_content']} | 🌲 Evergreen: {stats['evergreen_content']}")
+            
+            # Management buttons
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("Clear Expired", use_container_width=True):
+                    cleared = vs.clear_expired()
+                    st.sidebar.success(f"Cleared {cleared} expired items")
+            with col2:
+                if st.button("Clear All", use_container_width=True):
+                    if vs.clear_all(lang_code):
+                        st.sidebar.success("Memory cleared")
+                    else:
+                        st.sidebar.error("Failed to clear memory")
+                        
+        except Exception as e:
+            st.sidebar.error(f"Vector store error: {str(e)[:100]}")
+    else:
+        os.environ["ENABLE_VECTOR_STORE"] = "false"
 def _fix_readability(text: str) -> str:
     if not isinstance(text, str):
         return ""
@@ -1525,8 +1590,57 @@ if st.session_state.research_data and st.session_state.response:
 
 # Feedback form in sidebar
 st.sidebar.header("Feedback")
-feedback = st.sidebar.text_area("How can we improve? (Optional)")
+feedback = st.sidebar.text_area("How can we improve?", placeholder="Share your thoughts...")
 if st.sidebar.button("Submit Feedback"):
-    st.sidebar.success("Thanks for your feedback! 🙏")
-    with open("feedback.txt", "a") as f:
-        f.write(f"{feedback}\n")
+    if not feedback or len(feedback.strip()) == 0:
+        st.sidebar.error("Please enter your feedback.")
+    else:
+        # Send feedback via server-side email
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Get bot email credentials (sender and receiver are same)
+            bot_email = os.getenv("FEEDBACK_BOT_EMAIL", "")
+            bot_password = os.getenv("FEEDBACK_BOT_PASSWORD", "")
+            
+            if bot_email and bot_password:
+                # Create message - bot sends to itself
+                message = MIMEMultipart("alternative")
+                message["Subject"] = f"Deep Research AI - User Feedback [{datetime.datetime.now().strftime('%Y-%m-%d')}]"
+                message["From"] = bot_email
+                message["To"] = bot_email
+                
+                # Create the email body
+                text = f"""
+                New feedback received from Deep Research AI Agent
+                
+                ========================================
+                FEEDBACK:
+                ========================================
+                {feedback}
+                
+                ========================================
+                Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                ========================================
+                """
+                
+                part = MIMEText(text, "plain")
+                message.attach(part)
+                
+                # Send email via Gmail SMTP (bot to itself)
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                    server.login(bot_email, bot_password)
+                    server.sendmail(bot_email, bot_email, message.as_string())
+                
+                st.sidebar.success("Thanks! Your feedback has been sent! 🙏")
+                
+            else:
+                # No feedback system configured
+                st.sidebar.warning("Feedback system not available at the moment.")
+                    
+        except smtplib.SMTPAuthenticationError:
+            st.sidebar.error("Feedback system authentication error. Please contact admin.")
+        except Exception as e:
+            st.sidebar.error(f"Unable to send feedback. Please try again later.")

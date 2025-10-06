@@ -2,16 +2,32 @@ from langgraph.graph import StateGraph
 from research_agent import research_tool
 from draft_agent import draft_tool
 from joblib import Memory
+import os
+import json
 
 # Initialize caching with joblib
 memory = Memory("cache", verbose=0)
-memory.clear()  # Clear the cache
+# memory.clear()  # Don't clear on every import
+
+# Optional: Import vector store for summary storage
+VECTOR_STORE_ENABLED = os.getenv("ENABLE_VECTOR_STORE", "false").lower() == "true"
+vector_store = None
+if VECTOR_STORE_ENABLED:
+    try:
+        from vector_store import get_vector_store
+        vector_store = get_vector_store()
+    except:
+        VECTOR_STORE_ENABLED = False
 
 # Define the research node to update the state
 @memory.cache
-def fetch_research_data(query: str, deep_research: bool = False) -> list:
+def fetch_research_data(query: str, deep_research: bool = False, language: str = 'en') -> list:
     """Fetch research data using the research tool with caching."""
-    result = research_tool.run(query, deep_research=deep_research)
+    # Map language names to codes
+    lang_map = {'english': 'en', 'spanish': 'es', 'german': 'de'}
+    lang_code = lang_map.get(language.lower(), 'en')
+    
+    result = research_tool.run(query, deep_research=deep_research, language=lang_code)
     if isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict) and "error" in result[0]:
         raise Exception(f"Research failed: {result[0]['error']}")
     return result
@@ -20,7 +36,8 @@ def research_node(state):
     """Fetch research data and update the state."""
     query = state["query"]
     deep_research = state.get("deep_research", False)
-    research_data = fetch_research_data(query, deep_research)
+    language = state.get("language", "english")
+    research_data = fetch_research_data(query, deep_research, language)
     state["research"] = research_data
     return state
 
@@ -50,6 +67,34 @@ def draft_node(state):
     })
     if "Error drafting response" in result:
         raise Exception(result)
+    
+    # Store summary in vector store if enabled
+    if VECTOR_STORE_ENABLED and vector_store:
+        try:
+            # Parse the JSON result if it's a string
+            summary_data = None
+            if isinstance(result, str) and result.strip().startswith('{'):
+                try:
+                    summary_data = json.loads(result)
+                except:
+                    pass
+            
+            if summary_data:
+                # Map language to code
+                lang_map = {'english': 'en', 'spanish': 'es', 'german': 'de'}
+                lang_code = lang_map.get(language.lower(), 'en')
+                
+                # Store the summary sections
+                vector_store.add_research_data(
+                    query=state["query"],
+                    sources=[],  # Don't duplicate sources, they're already stored
+                    summary_sections=summary_data,
+                    language=lang_code
+                )
+                print("Stored summary in vector store")
+        except Exception as e:
+            print(f"Failed to store summary in vector DB: {e}")
+    
     state["draft"] = result
     return state
 
