@@ -109,7 +109,7 @@ AI-Agent-based-Deep-Research/
 
 ## Deploy your own instance
 
-### If you'd like to deploy your own version of this app with customizations with Streamlit Cloud : 
+If you'd like to deploy your own version of this app with customizations with Streamlit Cloud : 
 
 1. Fork this repository
 2. Visit [share.streamlit.io](https://share.streamlit.io)
