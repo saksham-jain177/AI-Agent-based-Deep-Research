@@ -145,19 +145,19 @@ streamlit run app.py
 ```
 ## ❓ FAQ
 
-**Q: Do I need coding knowledge?**
+**Q: Do I need coding knowledge?**\
 A: No. Open the web app, enter a query, and click Run.
 
-**Q: Can I use this for academic work?**
+**Q: Can I use this for academic work?** \
 A: Yes, but always verify sources and cite appropriately. This is a research tool, not a substitute for critical thinking.
 
-**Q: How accurate is the information?**
+**Q: How accurate is the information?**\
 A: We search reputable sources and filter out social media. However, always fact-check important information.
 
-**Q: Can I customize the AI model?**
+**Q: Can I customize the AI model?**\
 A: Yes. Choose a model from the sidebar (OpenRouter).
 
-**Q: Is my data private?**
+**Q: Is my data private?**\
 A: We don't store your searches. API providers may have their own policies.
 
 ## 📜 License
