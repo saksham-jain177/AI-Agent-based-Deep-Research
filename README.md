@@ -129,7 +129,7 @@ We welcome contributions! Here's how you can help:
 
 ### Development Setup
 
-      ```bash
+```bash
 # Clone your fork
 git clone https://github.com/YOUR_USERNAME/AI-Agent-based-Deep-Research.git
 
