@@ -1,7 +1,4 @@
-langchain-community
-langchain-openai
-langgraph
-tavily-python
+# Core
 requests
 beautifulsoup4
 python-dotenv
@@ -10,12 +7,20 @@ joblib
 reportlab
 python-docx
 tenacity
+
+# LangChain ecosystem
+langchain==0.1.20
+langchain-community==0.0.38
+langchain-openai==0.1.4
+langgraph==0.0.40
+
+# Vector + embeddings
 chromadb>=0.4.0
 sentence-transformers>=2.2.0
-langchain<0.2.0
+
+# Compatibility
 pydantic<2.0
 
-# Tier 1 improvements
 genai-prices>=0.0.50
 tokencost>=0.1.0
 tiktoken>=0.5.0
