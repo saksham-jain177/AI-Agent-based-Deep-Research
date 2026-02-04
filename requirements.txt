@@ -19,5 +19,5 @@ pydantic<2.0
 genai-prices>=0.0.50
 tokencost>=0.1.0
 tiktoken>=0.5.0
-bibtexparser>=2.0.0
+bibtexparser>=1.4.0,<2.0.0
 pytest>=7.0.0
