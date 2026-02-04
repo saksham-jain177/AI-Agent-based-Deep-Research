@@ -1,6 +1,7 @@
 import streamlit as st
 from main import run_research  # Import run_research from main.py
 from draft_agent import format_citation, STYLE_TEMPLATES  # Add this import
+from cost_estimator import estimate_research_cost  # Cost estimation
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
