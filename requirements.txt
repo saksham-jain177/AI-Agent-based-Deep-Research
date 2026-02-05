@@ -9,16 +9,16 @@ python-docx
 tenacity
 
 # LangChain ecosystem
-langchain==0.1.20
-langchain-community==0.0.38
-langchain-openai==0.1.4
-langgraph==0.0.40
+langchain>=0.1.0,<0.2.0
+langchain-community>=0.0.30
+langchain-openai>=0.1.0
+langgraph>=0.0.30
 
 # Vector + embeddings
-chromadb==0.4.24
+chromadb>=0.4.0
 
 # Compatibility
-pydantic<2.0
+pydantic>=1.10.0
 
 genai-prices>=0.0.50
 tokencost>=0.1.0
