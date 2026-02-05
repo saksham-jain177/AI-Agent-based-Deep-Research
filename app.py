@@ -116,6 +116,8 @@ st.markdown("""
         padding: 0.5rem 1.5rem;
         border: 1px solid rgba(255,255,255,0.1);
         transition: background-color 0.2s;
+        overflow: hidden; /* Prevent pseudo-elements from leaking into background */
+        position: relative;
     }
     
     .stButton > button:hover {
@@ -156,7 +158,7 @@ st.markdown("""
         transition: all 0.3s ease;
         box-shadow: 0 0 15px rgba(14, 165, 233, 0.5);
         position: relative;
-        overflow: hidden;
+        overflow: hidden; /* Prevent pseudo-elements from leaking into background */
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
@@ -166,12 +168,10 @@ st.markdown("""
     
     .stDownloadButton > button:hover {
         box-shadow: 0 0 25px rgba(14, 165, 233, 0.7);
-        transform: translateY(-2px) scale(1.05);
         background: linear-gradient(45deg, #0ea5e9, #065f46);
     }
     
     .stDownloadButton > button:active {
-        transform: translateY(1px) scale(0.98);
         box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
     }
     
@@ -1055,9 +1055,16 @@ def _clean_source_text(text: str) -> str:
     t = re.sub(r"\s*\|\s*", " • ", t)
     # Ensure space after punctuation
     t = re.sub(r"([\.,;:])(?!\s)", r"\1 ", t)
-    # Collapse extra spaces
-    t = re.sub(r"\s{2,}", " ", t)
-    # Preserve paragraphs
+    # Ensure no outer bolding wraps the entire block (common LLM hallucination)
+    t = t.strip()
+    if (t.startswith("**") and t.endswith("**")) or (t.startswith("__") and t.endswith("__")):
+        if len(t) > 100:
+            t = t[2:-2].strip()
+    
+    # Check for leading headers (e.g., # Header) that might cause "huge" looks
+    while t.startswith("#"):
+        t = re.sub(r'^#+\s*', '', t).strip()
+            
     return t
 
 
@@ -1591,17 +1598,20 @@ if st.session_state.research_data and st.session_state.response:
         # Generate BibTeX from citation_formatter
         try:
             from citation_formatter import CitationFormatter, Source
-            formatter = CitationFormatter()
             sources = []
             for item in st.session_state.research_data:
+                # Basic normalization for Source objects
                 sources.append(Source(
-                    title=item.get('title', 'Unknown'),
+                    title=item.get('title', 'Unknown Title'),
                     url=item.get('url', ''),
-                    author=item.get('author'),
+                    authors=[item.get('author')] if item.get('author') else None,
                     publisher=item.get('publisher'),
-                    date=item.get('date')
+                    publication_date=None # We'll let from_dict handle this if needed better
                 ))
-            bib_data = formatter.format_batch(sources, "BibTeX")
+            
+            # CitationFormatter needs the list of sources in __init__
+            formatter = CitationFormatter(sources)
+            bib_data = formatter.format_bibtex()
         except Exception as e:
             bib_data = f"% Error generating BibTeX: {e}"
             
