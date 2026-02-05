@@ -1048,20 +1048,29 @@ def _render_small_text(text: str):
 def _clean_source_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
+    # Normalize line endings
     t = text.replace("\r\n", "\n").replace("\r", "\n")
+    
     # Drop common 'X min read' fragments
     t = re.sub(r"\b\d+\s*min\s*read\b", "", t, flags=re.IGNORECASE)
+    
     # Replace lonely vertical bars used as separators with bullets
     t = re.sub(r"\s*\|\s*", " • ", t)
-    # Ensure space after punctuation
-    t = re.sub(r"([\.,;:])(?!\s)", r"\1 ", t)
-    # Ensure no outer bolding wraps the entire block (common LLM hallucination)
+    
+    # Ensure space after punctuation BUT NOT in decimal numbers (e.g. 4.6)
+    # Match punctuation followed by non-space, only if not preceded AND followed by digits
+    t = re.sub(r"(?<!\d)([\.,;:])(?!\s)|([\.,;:])(?!\s|(?<=\d.)\d)", r"\1\2 ", t)
+    
+    # Convert lone starting asterisks to proper bullet points for Markdown
+    t = re.sub(r"^\s*\*\s*(?!\*)", "• ", t, flags=re.MULTILINE)
+    
+    # Ensure no outer bolding wraps the entire block
     t = t.strip()
     if (t.startswith("**") and t.endswith("**")) or (t.startswith("__") and t.endswith("__")):
         if len(t) > 100:
             t = t[2:-2].strip()
     
-    # Check for leading headers (e.g., # Header) that might cause "huge" looks
+    # Strip leading headers
     while t.startswith("#"):
         t = re.sub(r'^#+\s*', '', t).strip()
             
@@ -1513,18 +1522,17 @@ if st.session_state.research_data and st.session_state.response and not st.sessi
             seen_titles.add(title)
             unique_sections.append(section)
     
-    st.write("### Research Summary 📚")
-    with st.expander("View Research Summary", expanded=True):
+    st.write("### Research Data 📚")
+    with st.expander("View External Source Snippets", expanded=True):
         for item in st.session_state.research_data:
             st.markdown(f"#### {item['title']}")
-            # Clean and render content - ensure markdown works for ALL languages
+            # Clean and render content
             content = _clean_source_text(item['content'])
-            # Fix asterisk formatting universally
-            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
-            content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)  # Also handle ***
-            # Render as markdown with proper formatting
-            st.markdown(content)
-            st.markdown(f"[Source]({item['url']})")
+            
+            # Use a slightly different style for raw snippets to distinguish from analysis
+            st.info(content)
+            
+            st.markdown(f"🔗 [Source]({item['url']})")
             st.markdown("---")
     
     st.write("### Detailed Analysis 📝")
