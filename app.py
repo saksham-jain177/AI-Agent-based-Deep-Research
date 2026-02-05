@@ -40,6 +40,10 @@ if "citation_format" not in st.session_state:
     st.session_state.citation_format = "APA"
 if "target_word_count" not in st.session_state:
     st.session_state.target_word_count = 1000  # Default value
+if "__busy__" not in st.session_state:
+    st.session_state["__busy__"] = False
+if "__trigger__" not in st.session_state:
+    st.session_state["__trigger__"] = False
 
 # Inject custom CSS for improved readability and aesthetics
 st.markdown("""
@@ -103,40 +107,25 @@ st.markdown("""
         outline: none;
     }
     
-    /* Button styling (for Download 📥 button) */
+    /* Button styling (Clean & Modern) */
     .stButton > button {
-        background: linear-gradient(45deg, #155e75, #0ea5e9);
+        background-color: #1f6feb;
         color: white;
         font-weight: 600;
-        padding: 0.6rem 1.5rem;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
-        position: relative;
-        overflow: hidden;
+        border-radius: 6px;
+        padding: 0.5rem 1.5rem;
+        border: 1px solid rgba(255,255,255,0.1);
+        transition: background-color 0.2s;
     }
     
     .stButton > button:hover {
-        box-shadow: 0 0 20px rgba(14, 165, 233, 0.6);
-        transform: none; /* No growth/shift on hover */
+        background-color: #388bfd;
     }
     
-    .stButton > button:active {
-        transform: translateY(1px);
-        box-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
-    }
-
-    /* Disabled button state: no hover animation, muted style */
     .stButton > button:disabled {
-        background: #2d3748 !important;
-        color: #a0aec0 !important;
-        box-shadow: none !important;
-        transform: none !important;
-        cursor: not-allowed !important;
-        opacity: 0.7 !important;
-        pointer-events: none !important;
+        background-color: #21262d !important;
+        color: #8b949e !important;
+        border-color: #30363d !important;
     }
     
     .stButton > button::after {
@@ -457,39 +446,104 @@ st.markdown("""
     h1::after {
         content: '';
         display: block;
-        position: absolute;
+        position: relative; /* Changed from absolute to prevent overlap */
         height: 2px;
-        width: 0;
-        bottom: 0;
-        left: 0;
-        background: linear-gradient(90deg, #0ea5e9, transparent);
-        transition: width 0.5s ease;
+        width: 100px;
+        max-width: 100%;
+        background: #1f6feb;
+        margin-top: 5px;
+        background: linear-gradient(90deg, #1f6feb, transparent);
     }
     
-    h1:hover::after {
-        width: 100%;
+    /* Limit size of headings inside results to prevent "Huge Bold" looks */
+    .stExpander h1, .stExpander h2, .stExpander h3 {
+        font-size: 1.2rem !important;
+        margin-top: 1rem !important;
+        margin-bottom: 0.5rem !important;
+        border: none !important;
     }
     
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: #0d1117;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: #30363d;
-        border-radius: 5px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: #58a6ff;
+    .stExpander strong {
+        color: #58a6ff;
     }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+def _clean_analysis_text(text):
+    """Deep cleaning for Analysis sections to handle LLM artifacts."""
+    if not isinstance(text, str):
+        return ""
+    t = text.strip()
+    
+    # Aggressive: Strip outer bolding that wraps EVERYTHING
+    # Sometimes LLMs do: ** \n content \n **
+    if (t.startswith("**") and t.endswith("**")) or (t.startswith("__") and t.endswith("__")):
+        # Only strip if it's a long block, otherwise it might be a legitimate single-word bold
+        if len(t) > 100:
+            t = t[2:-2].strip()
+
+    # Remove redundant headings that repeat the section title (H1, H2, H3)
+    # Often the LLM starts with "# Analysis" or "## Discussion"
+    t = re.sub(r'^(#|##|###)\s+[^\n]+\n*', '', t) 
+    
+    # Fix mashed-together tables: "Text | Col1 | Col2 |" -> "Text\n\n| Col1 | Col2 |"
+    # Look for sentences ending in punctuation followed by a pipe
+    t = re.sub(r'([\.!?。！？])\s*(\|)', r'\1\n\n\2', t)
+    
+    lines = t.split('\n')
+    new_lines = []
+    for line in lines:
+        line_stripped = line.strip()
+        # If a line looks like a table row but has leading text
+        if "|" in line_stripped and not line_stripped.startswith("|") and line_stripped.count('|') >= 2:
+            parts = re.split(r"(?=\|)", line, 1) # Split at first |
+            new_lines.append(parts[0].strip())
+            new_lines.append("") # spacer
+            new_lines.append(parts[1].strip())
+        else:
+            new_lines.append(line)
+    
+    # Repair missing table dividers
+    temp_lines = new_lines
+    new_lines = []
+    i = 0
+    while i < len(temp_lines):
+        line = temp_lines[i]
+        line_stripped = line.strip()
+        if line_stripped.startswith('|') and line_stripped.count('|') >= 3:
+            # Possible table line
+            is_divider = '---' in line_stripped or (line_stripped.count('-') > 5 and '|' in line_stripped)
+            new_lines.append(line)
+            
+            # If this is a header (not a divider) and there's no divider next, inject one
+            if not is_divider:
+                has_divider = False
+                if i + 1 < len(temp_lines):
+                    next_line = temp_lines[i+1].strip()
+                    if next_line.startswith('|') and ('---' in next_line or '-|' in next_line):
+                        has_divider = True
+                
+                if not has_divider:
+                    # Only inject if it looks like a header (3+ pipes)
+                    num_col = line_stripped.count('|') - 1
+                    divider = "|" + "|".join(["---"] * num_col) + "|"
+                    new_lines.append(divider)
+        else:
+            new_lines.append(line)
+        i += 1
+        
+    t = "\n".join(new_lines)
+    
+    # Fix BibTeX blocks: isolate them and ensure they are code blocks or clean text
+    if "bibtex" in t.lower():
+        # If it looks like raw bibtex without code blocks, wrap it
+        if "@" in t and "{" in t and "```" not in t:
+            t = re.sub(r'(@[a-zA-Z]+\{[^}]+})', r'\n```bibtex\n\1\n```\n', t)
+
+    # Ensure consistent spacing
+    t = re.sub(r'\n{3,}', '\n\n', t)
+    
+    return t.strip()
 
 # Function to check OpenRouter status
 def check_openrouter_status():
@@ -612,6 +666,16 @@ def generate_pdf(query, data, summary, deep_research=False):
         firstLineIndent=-36,
         spaceAfter=12
     ))
+    
+    # Add a custom style for tables/monospace
+    styles.add(ParagraphStyle(
+        name='Monospace',
+        parent=styles['BodyText'],
+        fontName='Courier',
+        fontSize=8,
+        leading=10,
+        spaceAfter=12
+    ))
 
     story = []
 
@@ -662,12 +726,15 @@ def generate_pdf(query, data, summary, deep_research=False):
                 if para.strip():
                     # Clean up any markdown artifacts
                     para = para.replace('\\n', ' ')
-                    # Only split if we have a true numbered list (multiple items starting with number)
-                    # Check if paragraph contains multiple numbered items at line start
+                    
                     lines = para.split('\n')
                     numbered_lines = [l for l in lines if re.match(r'^\d+\.\s', l.strip())]
                     
-                    if len(numbered_lines) >= 2:  # It's a real list
+                    if "|" in para or "-|-" in para:
+                        # Probably a table, use monospace
+                        story.append(Paragraph(para.strip().replace("\n", "<br/>"), styles['Monospace']))
+                        story.append(Spacer(1, 12))
+                    elif len(numbered_lines) >= 2:  # It's a real list
                         # Split and add numbered items separately
                         for line in lines:
                             if line.strip():
@@ -708,9 +775,14 @@ def generate_pdf(query, data, summary, deep_research=False):
                         if ref.strip():
                             references.append(ref.strip())
                 elif current_heading:
-                    formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
-                    story.append(Paragraph(formatted_text, styles['BodyText']))
-                    story.append(Spacer(1, 12))
+                    if "|" in section or "-|-" in section:
+                        # Table in fallback path
+                        story.append(Paragraph(section.strip().replace("\n", "<br/>"), styles['Monospace']))
+                        story.append(Spacer(1, 12))
+                    else:
+                        formatted_text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", section)
+                        story.append(Paragraph(formatted_text, styles['BodyText']))
+                        story.append(Spacer(1, 12))
 
         if references:
             story.append(PageBreak())
@@ -1123,7 +1195,7 @@ def fetch_openrouter_models(api_key: str | None) -> list:
     except Exception:
         return []
 
-DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL") or "x-ai/grok-4-fast:free"
+DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL") or "tngtech/deepseek-r1t2-chimera:free"
 api_key_present = os.getenv("OPENROUTER_API_KEY")
 all_models = fetch_openrouter_models(api_key_present)
 free_models_meta = [m for m in all_models if m.get("free")]
@@ -1131,6 +1203,7 @@ free_models = [m["id"] for m in free_models_meta]
 if not free_models:
     # Fallback curated set
     free_models_meta = [
+        {"id": "tngtech/deepseek-r1t2-chimera:free", "free": True, "context": None},
         {"id": "x-ai/grok-4-fast:free", "free": True, "context": None},
         {"id": "deepseek/deepseek-r1:free", "free": True, "context": None},
         {"id": "deepseek/deepseek-v3:free", "free": True, "context": None},
@@ -1238,12 +1311,12 @@ with col2:
 
 with col3:
     st.markdown("#### Citation Format")
-    citation_format = st.radio(
+    citation_format = st.segmented_control(
         "Select citation style",
-        options=["APA", "MLA", "IEEE"],
-        index=0,
-        key="citation_format_radio",
-        help="Choose citation formatting style"
+        options=["APA", "MLA", "IEEE", "BibTeX"],
+        default="APA",
+        key="citation_format_select",
+        help="APA/MLA/IEEE are standard formats. BibTeX is for researchers using LaTeX."
     )
 
 # Add word count slider below the columns
@@ -1297,18 +1370,49 @@ with st.expander("📋 Writing Style Preview"):
             <p style='color: #c9d1d9;'>{style_descriptions[writing_style]}</p>
         </div>
     """, unsafe_allow_html=True)
-    st.markdown(f"<p style='color: #c9d1d9;'>Example citation in {citation_format}:</p>", unsafe_allow_html=True)
     example_citation = {
-        "title": "Sample Research Paper",
-        "url": "https://example.com/research",
+        "title": "Impact of LLMs on Deep Research",
+        "url": "https://arxiv.org/abs/2401.0001",
+        "author": "Antigravity AI",
+        "publisher": "Research DeepMind",
+        "date": "2024"
     }
     st.code(format_citation(example_citation, citation_format))
 
-# Initialize control flags
-if "__busy__" not in st.session_state:
-    st.session_state["__busy__"] = False
-if "__trigger__" not in st.session_state:
-    st.session_state["__trigger__"] = False
+# Cost Estimation Display
+with st.container():
+    est = estimate_research_cost(
+        query=query, 
+        deep_research=deep_research, 
+        target_word_count=target_word_count,
+        model=selected_model
+    )
+    
+    # Color code confidence
+    conf_colors = {"high": "#28a745", "medium": "#ffc107", "low": "#dc3545"}
+    conf_color = conf_colors.get(est["confidence"], "#6c757d")
+    
+    st.markdown(f"""
+        <div style='background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;'>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <span style='color: #8b949e; font-size: 0.9rem;'>Estimated Cost</span>
+                <span style='color: {conf_color}; font-size: 0.8rem; font-weight: bold; border: 1px solid {conf_color}; padding: 2px 8px; border-radius: 12px;'>
+                    {est['confidence'].upper()} CONFIDENCE
+                </span>
+            </div>
+            <div style='font-size: 1.5rem; font-weight: bold; color: #e6edf3; margin: 0.5rem 0;'>
+                ${est['cost_usd']['min']:.4f} - ${est['cost_usd']['max']:.4f}
+            </div>
+            <div style='color: #8b949e; font-size: 0.8rem;'>
+                Tokens: {est['tokens']['min']:,} - {est['tokens']['max']:,} | Source: {est['pricing_source']}
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if est["degradation_reasons"]:
+        with st.expander("Why is confidence lower?"):
+            for reason in est["degradation_reasons"]:
+                st.caption(f"• {reason}")
 
 # Research button logic (disabled if keys missing or busy)
 run_disabled = (len(missing_keys) > 0) or st.session_state["__busy__"]
@@ -1324,74 +1428,66 @@ if st.button("Run Research", disabled=run_disabled):
     except Exception:
         pass
 
-# Phase 2: perform the job when triggered
+# Research execution loop (Granular Progress)
 if st.session_state.get("__trigger__"):
     if not query.strip():
         st.error("Please enter a valid research query.")
         st.session_state["__busy__"] = False
         st.session_state["__trigger__"] = False
-    elif not check_openrouter_status():
-        st.error("OpenRouter is currently down. Please try again later.")
-        st.session_state["__busy__"] = False
-        st.session_state["__trigger__"] = False
     else:
         try:
-            with st.spinner("Processing your request..."):
-                # Initialize progress bar and status
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+            from main import app as graph_app
+            
+            # Prepare inputs
+            input_dict = {
+                "query": query,
+                "deep_research": deep_research,
+                "target_word_count": target_word_count,
+                "writing_style": writing_style.lower(),
+                "citation_format": citation_format,
+                "language": language.lower()
+            }
 
-                # Step 1: Fetch research data
-                status_text.text("Step 1/3: Fetching research data... 🔍")
-                logging.info(f"Starting research for query: {query}, deep_research: {deep_research}, target_word_count: {target_word_count}")
-                research_data, response = run_research(
-                    query,
-                    deep_research=deep_research,
-                    target_word_count=target_word_count,
-                    writing_style=writing_style,
-                    citation_format=citation_format,
-                    language=language
-                )
-                progress_bar.progress(20)
+            status_container = st.container()
+            with status_container:
+                status_box = st.status("🚀 Initializing research workflow...", expanded=True)
+            
+            # Use app.stream for granular updates
+            for event in graph_app.stream(input_dict):
+                for node_name, output in event.items():
+                    if node_name == "research":
+                        num_found = len(output.get("research", []))
+                        status_box.write(f"✅ Phase 1/4: Found {num_found} sources.")
+                        # Advance status label
+                        status_box.update(label="Phase 2/4: Synthesizing & Drafting...", state="running")
+                        time.sleep(0.01)
+                    elif node_name == "draft":
+                        status_box.write("✅ Phase 2/4: Report text drafted.")
+                        status_box.update(label="Phase 3/4: Finalizing documents...", state="running")
+                        
+                        # Store results from output
+                        st.session_state.research_data = output.get("research", [])
+                        st.session_state.response = output.get("draft", "")
+                        
+                        # Generate export formats
+                        st.session_state.pdf_buffer = generate_pdf(query, st.session_state.research_data, st.session_state.response, deep_research=deep_research)
+                        st.session_state.word_buffer = generate_docx(query, st.session_state.research_data, st.session_state.response, deep_research=deep_research)
+                        
+                        status_box.write("✅ Phase 3/4: PDF & Word reports ready.")
+                        status_box.update(label="Phase 4/4: Research Complete!", state="complete", expanded=False)
+                        time.sleep(0.01)
 
-                # Step 2: Drafting response
-                status_text.text("Step 2/3: Drafting response... ✍️")
-                if "Error drafting response" in response:
-                    st.error(response)
-                    logging.error(f"Failed to draft response: {response}")
-                else:
-                    # Simulate gradual progress during drafting for better feedback
-                    for p in (35, 45, 55, 65):
-                        progress_bar.progress(p)
-
-                    # Step 3: Generating PDF
-                    status_text.text("Step 3/3: Generating PDF report... 📄")
-                    st.success("Research completed! 🎉", icon="✅")
-                    
-                    # Calculate word count and page estimate
-                    word_count = len(response.split())
-                    page_estimate = word_count // 400 + 1  # Rough estimate: ~400 words per page
-                    
-                    progress_bar.progress(85)
-
-                    # Store results in session state
-                    st.session_state.research_data = research_data
-                    st.session_state.response = response
-                    st.session_state.pdf_buffer = generate_pdf(query, research_data, response, deep_research=deep_research)
-                    st.session_state.word_buffer = generate_docx(query, research_data, response, deep_research=deep_research)
+            st.toast("Research successfully completed!", icon="🚀")
+            st.success("Research completed! Explore your report below. 🎉")
 
         except Exception as e:
-            st.error(f"Failed after retries: {str(e)}")
-            logging.error(f"Failed to process query '{query}': {str(e)}")
+            st.error(f"Research failed: {str(e)}")
+            logging.error(f"Research failed: {str(e)}")
         finally:
-            progress_bar.progress(100)
-            progress_bar.empty()  # Clear progress bar
-            status_text.empty()  # Clear status text
             st.session_state["__busy__"] = False
             st.session_state["__trigger__"] = False
-            # Don't rerun here - it causes the summary to disappear
 
-# Display the research summary if available (persists after rerun)
+# Display results
 if st.session_state.research_data and st.session_state.response and not st.session_state.get("__busy__", False):
     # Re-display the summary that was generated
     try:
@@ -1430,13 +1526,16 @@ if st.session_state.research_data and st.session_state.response and not st.sessi
         content = section.get("content", "")
         
         with st.expander(f"📖 {title}", expanded=True):
-            # Clean content universally for all languages
-            content = re.sub(r'^##\s+', '', content)  # Remove ## at start
-            # Fix various asterisk patterns
-            content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', content)
-            content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', content)
-            # Ensure markdown rendering works
-            st.markdown(content)
+            # Deep clean the content for display
+            display_content = _clean_analysis_text(content)
+            
+            # Normalize asterisk patterns for bolding
+            display_content = re.sub(r'\*{4}([^*]{1,100}?)\*{4}', r'**\1**', display_content)
+            display_content = re.sub(r'\*{3}([^*]{1,100}?)\*{3}', r'**\1**', display_content)
+            
+            # Use Streamlit markdown with unsafe HTML for tables if needed 
+            # (Streamlit handles standard MD tables fine)
+            st.markdown(display_content)
 
     # Show metadata
     meta = parsed.get("metadata", {})
@@ -1471,11 +1570,11 @@ if st.session_state.research_data and st.session_state.response and not st.sessi
 if st.session_state.research_data and st.session_state.response:
     st.write("### Download Options")
     
-    # Simple format selection without session state
-    selected_format = st.radio(
+    # Modern format selection
+    selected_format = st.segmented_control(
         "Select format:",
-        ["PDF (Recommended)", "Word", "Markdown", "JSON", "Text"],
-        horizontal=True
+        ["PDF (Recommended)", "Word", "Markdown", "JSON", "Text", "BibTeX"],
+        default="PDF (Recommended)"
     )
 
     # Show description based on selection
@@ -1487,6 +1586,32 @@ if st.session_state.research_data and st.session_state.response:
             file_name="research_report.pdf",
             mime="application/pdf"
         )
+    elif selected_format == "BibTeX":
+        st.caption("Download research citations in BibTeX format for LaTeX and reference managers.")
+        # Generate BibTeX from citation_formatter
+        try:
+            from citation_formatter import CitationFormatter, Source
+            formatter = CitationFormatter()
+            sources = []
+            for item in st.session_state.research_data:
+                sources.append(Source(
+                    title=item.get('title', 'Unknown'),
+                    url=item.get('url', ''),
+                    author=item.get('author'),
+                    publisher=item.get('publisher'),
+                    date=item.get('date')
+                ))
+            bib_data = formatter.format_batch(sources, "BibTeX")
+        except Exception as e:
+            bib_data = f"% Error generating BibTeX: {e}"
+            
+        st.download_button(
+            label="Download BibTeX 📥",
+            data=bib_data,
+            file_name="citations.bib",
+            mime="application/x-bibtex"
+        )
+
     elif selected_format == "Word":
         st.caption("Download as a Word document, perfect for editing and professional documentation.")
         st.download_button(

@@ -95,7 +95,7 @@ def research_web(query, deep_research=False, language='en'):
                 })
                 url_set.add(url)
 
-        # Initial query
+        # Initial query (reduced for speed)
         results = tavily_client.search(query, max_results=max_results)
         initial_data = []
         for r in results["results"]:
@@ -109,17 +109,16 @@ def research_web(query, deep_research=False, language='en'):
                 data.append(item)
                 url_set.add(item["url"])
 
-        # If deep research mode and fewer than 20 results, try additional queries
-        if deep_research and len(data) < 20:
+        # If deep research mode and fewer than 10 results, try additional queries
+        if deep_research and len(data) < 10:
             print(f"Initial query returned {len(data)} results, attempting additional queries...")
             # List of variant queries to broaden the search
             variant_queries = [
-                f"{query} overview OR review OR advancements OR trends",
-                f"{query} recent developments OR innovations OR breakthroughs",
-                f"{query} applications OR use cases OR impact"
+                f"{query} overview OR review OR advancements",
+                f"{query} recent developments OR breakthroughs",
             ]
             for variant_query in variant_queries:
-                if len(data) >= 20:
+                if len(data) >= 15:
                     break
                 results = tavily_client.search(variant_query, max_results=max_results)
                 additional_data = []
@@ -133,8 +132,8 @@ def research_web(query, deep_research=False, language='en'):
                     if item["url"] not in url_set:
                         data.append(item)
                         url_set.add(item["url"])
-                # Limit to 30 results to avoid overwhelming the model
-                data = data[:30]
+                # Limit to 20 results to avoid overwhelming the model
+                data = data[:20]
 
         # Store results in vector store if enabled
         if VECTOR_STORE_ENABLED and vector_store and data:

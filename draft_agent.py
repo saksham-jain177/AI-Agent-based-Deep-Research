@@ -35,7 +35,7 @@ def _get_llm():
     if not api_key:
         return None
     base_url = os.getenv("OPENAI_BASE_URL") or "https://openrouter.ai/api/v1"
-    model = os.getenv("OPENROUTER_MODEL", "cognitivecomputations/dolphin3.0-r1-mistral-24b:free")
+    model = os.getenv("OPENROUTER_MODEL", "tngtech/deepseek-r1t2-chimera:free")
 
     desired = {"api_key": api_key, "base_url": base_url, "model": model}
     # Rebuild the LLM client if config changed (e.g., user switched models)
@@ -91,7 +91,7 @@ def get_shallow_word_counts(target_word_count):
 shallow_introduction_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a concise introduction for a research summary based on the following data. Briefly introduce the topic and its significance in approximately {word_count} words, focusing on clarity and understanding with minimal context. Do not include the word "Introduction" in your response; only provide the content of the introduction section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a concise introduction for a research summary based on the following data. Briefly introduce the topic and its significance in approximately {word_count} words, focusing on clarity and understanding with minimal context. Do not include the word "Introduction" in your response; only provide the content of the introduction section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -100,7 +100,7 @@ shallow_introduction_prompt = PromptTemplate(
 shallow_key_findings_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a concise key findings section for a research summary based on the following data. Summarize the main points in a numbered list (3-5 points, approximately {word_count} words total), focusing on clarity and understanding with minimal context. Each numbered point must be on a new line with a newline character (\n) between points (e.g., 1. First finding.\n2. Second finding.\n3. Third finding.). Ensure there is a space after each number and period (e.g., "1. " not "1."). Do not include the phrase "Key Findings" in your response; only provide the content of the key findings section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a concise key findings section for a research summary based on the following data. Summarize the main points in a numbered list (3-5 points, approximately {word_count} words total), focusing on clarity and understanding with minimal context. Each numbered point must be on a new line with a newline character (\n) between points (e.g., 1. First finding.\n2. Second finding.\n3. Third finding.). Ensure there is a space after each number and period (e.g., "1. " not "1."). Do not include the phrase "Key Findings" in your response; only provide the content of the key findings section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -134,7 +134,7 @@ shallow_analysis_prompt = PromptTemplate(
 shallow_conclusion_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a concise conclusion section for a research summary based on the following data. Conclude with a short statement on potential future developments or recommendations in approximately {word_count} words, focusing on clarity and understanding with minimal context. Do not include the word "Conclusion" in your response; only provide the content of the conclusion section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a concise conclusion section for a research summary based on the following data. Conclude with a short statement on potential future developments or recommendations in approximately {word_count} words, focusing on clarity and understanding with minimal context. Do not include the word "Conclusion" in your response; only provide the content of the conclusion section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -154,7 +154,7 @@ def get_deep_word_counts(target_word_count):
 abstract_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed abstract for a research paper based on the following data. Provide a comprehensive overview of the topic, research objectives, key findings, and their implications in approximately {word_count} words. Include a brief mention of the methodology and significance of the research. Provide detailed insights and avoid summarizing the data directly—focus on synthesizing the overall narrative. Do not include the word "Abstract" in your response; only provide the content of the abstract section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed abstract for a research paper based on the following data. Provide a comprehensive overview of the topic, research objectives, key findings, and their implications in approximately {word_count} words. Include a brief mention of the methodology and significance of the research. Provide detailed insights and avoid summarizing the data directly—focus on synthesizing the overall narrative. Do not include the word "Abstract" in your response; only provide the content of the abstract section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -163,7 +163,7 @@ abstract_prompt = PromptTemplate(
 introduction_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed introduction for a research paper based on the following data. Introduce the topic in depth, covering its historical context, current significance, and the purpose of this research in approximately {word_count} words. Discuss its relevance in scientific, technological, or societal contexts, citing specific trends or events. Elaborate with examples, historical developments, and current challenges in the field. Do not include the word "Introduction" in your response; only provide the content of the introduction section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed introduction for a research paper based on the following data. Introduce the topic in depth, covering its historical context, current significance, and the purpose of this research in approximately {word_count} words. Discuss its relevance in scientific, technological, or societal contexts, citing specific trends or events. Elaborate with examples, historical developments, and current challenges in the field. Do not include the word "Introduction" in your response; only provide the content of the introduction section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -172,7 +172,7 @@ introduction_prompt = PromptTemplate(
 literature_review_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed literature review for a research paper based on the following data. Synthesize existing knowledge and findings from all provided sources in approximately {word_count} words. Highlight trends, gaps, controversies, and key developments in the field, providing a critical overview of the current state of research. Include specific references to studies or advancements mentioned in the data, and discuss their implications. Do not include the phrase "Literature Review" in your response; only provide the content of the literature review section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed literature review for a research paper based on the following data. Synthesize existing knowledge and findings from all provided sources in approximately {word_count} words. Highlight trends, gaps, controversies, and key developments in the field, providing a critical overview of the current state of research. Include specific references to studies or advancements mentioned in the data, and discuss their implications. Do not include the phrase "Literature Review" in your response; only provide the content of the literature review section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -181,7 +181,7 @@ literature_review_prompt = PromptTemplate(
 key_findings_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed key findings section for a research paper based on the following data. Summarize the main points in a numbered list (5-7 points, approximately {word_count} words total), including specific examples, data points, and insights from each source where applicable. Ensure comprehensive coverage of all relevant findings, discussing methodologies, results, and their significance. Each numbered point must be on a new line with a newline character (\n) between points (e.g., 1. First finding.\n2. Second finding.\n3. Third finding.). Ensure there is a space after each number and period (e.g., "1. " not "1."). Do not include the phrase "Key Findings" in your response; only provide the content of the key findings section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed key findings section for a research paper based on the following data. Summarize the main points in a numbered list (5-7 points, approximately {word_count} words total), including specific examples, data points, and insights from each source where applicable. Ensure comprehensive coverage of all relevant findings, discussing methodologies, results, and their significance. Each numbered point must be on a new line with a newline character (\n) between points (e.g., 1. First finding.\n2. Second finding.\n3. Third finding.). Ensure there is a space after each number and period (e.g., "1. " not "1."). Do not include the phrase "Key Findings" in your response; only provide the content of the key findings section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -190,7 +190,7 @@ key_findings_prompt = PromptTemplate(
 analysis_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed analysis section for a research paper based on the following data. Provide in-depth insights, implications, and critical analysis of the findings in approximately {word_count} words. Discuss broader impacts, potential applications, limitations, challenges, and areas of uncertainty, integrating perspectives from the data. Compare and contrast findings, and propose hypotheses for future exploration. Elaborate extensively with examples and potential scenarios. Do not include the word "Analysis" in your response; only provide the content of the analysis section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed analysis section for a research paper based on the following data. Provide in-depth insights, implications, and critical analysis of the findings in approximately {word_count} words. Discuss broader impacts, potential applications, limitations, challenges, and areas of uncertainty, integrating perspectives from the data. Compare and contrast findings, and propose hypotheses for future exploration. Elaborate extensively with examples and potential scenarios. Do not include the word "Analysis" in your response; only provide the content of the analysis section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content. Use Markdown tables or lists where appropriate to improve readability.
 
     Data: {data}
     """
@@ -199,7 +199,7 @@ analysis_prompt = PromptTemplate(
 conclusion_prompt = PromptTemplate(
     input_variables=["data", "word_count"],
     template="""
-    Generate a detailed conclusion section for a research paper based on the following data. Provide a thorough summary of findings, their significance, and potential future developments in approximately {word_count} words. Offer detailed recommendations for further research, addressing how the findings contribute to the field and what steps should be taken next. Discuss long-term implications and future directions. Do not include the word "Conclusion" in your response; only provide the content of the conclusion section. Do not use Markdown formatting (e.g., **bold**) within the content; provide plain text only. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
+    Generate a detailed conclusion section for a research paper based on the following data. Provide a thorough summary of findings, their significance, and potential future developments in approximately {word_count} words. Offer detailed recommendations for further research, addressing how the findings contribute to the field and what steps should be taken next. Discuss long-term implications and future directions. Do not include the word "Conclusion" in your response; only provide the content of the conclusion section. Do not include any internal reasoning tags like <think> or similar markers in your response; only provide the final content.
 
     Data: {data}
     """
@@ -310,32 +310,28 @@ LANGUAGE_PROMPTS = {
         - 保持正式的学术语气""",
 }
 
-def format_citation(source: Dict[str, str], style: str) -> str:
-    """Format citation based on selected style following industry standards."""
-    title = source.get('title', '')
-    url = source.get('url', '')
-    # Get current date in appropriate format
-    year = datetime.now().strftime("%Y")
-    full_date = datetime.now().strftime("%B %d, %Y")
-    access_date = datetime.now().strftime("%d %b. %Y")
-    
-    # Extract domain name as publisher/website name
-    domain = urlparse(url).netloc
-    # Clean up domain (remove www., .com, etc for cleaner display)
-    site_name = domain.replace('www.', '').split('.')[0].title()
-
-    citations = {
-        # APA 7th Edition: Website Name. (Year, Month Day). Title. URL
-        "APA": f"{site_name}. ({full_date}). {title}. {url}",
+def format_citation(source_dict: Dict[str, str], style: str) -> str:
+    """Format citation based on selected style using the CitationFormatter engine."""
+    try:
+        from citation_formatter import CitationFormatter, Source
         
-        # MLA 9th Edition: "Title." Website Name, Day Month Year, URL.
-        "MLA": f'"{title}." {site_name}, {full_date}, {url}.',
+        # Create source object from dict
+        source = Source(
+            title=source_dict.get('title', 'Unknown Title'),
+            url=source_dict.get('url', ''),
+            author=source_dict.get('author'),
+            publisher=source_dict.get('publisher'),
+            date=source_dict.get('date')
+        )
         
-        # IEEE: [#] Title, Website Name. Available: URL [Accessed: Date]
-        "IEEE": f"[{hash(url) % 100 + 1}] {title}, {site_name}. Available: {url} [Accessed: {access_date}]",
-    }
-    
-    return citations.get(style, citations["APA"])
+        formatter = CitationFormatter()
+        return formatter.format_single(source, style)
+    except Exception as e:
+        logging.error(f"Error in professional citation formatting: {e}")
+        # Fallback to simple formatting if module fails
+        title = source_dict.get('title', 'Unknown Title')
+        url = source_dict.get('url', '')
+        return f"{title}. Available at: {url}"
 
 # --- Formatting helpers ---
 def sanitize_template_for_markdown(template_text: str) -> str:
@@ -355,6 +351,11 @@ def normalize_markdown(text: str) -> str:
     # Ensure bullets are on separate lines if jammed: "* a * b" -> "* a\n* b"
     t = re.sub(r"\*\s+(?=\w)", "* ", t)  # normalize bullet spacing
     t = re.sub(r"(?<=\w)\s\*\s", "\n* ", t)
+    
+    # Ensure tables are on their own lines: "...text | col |" -> "...text\n\n| col |"
+    # Matches a sentence ending with punctuation followed by a space and a pipe
+    t = re.sub(r"(?<=[\.!?。！？])\s+(\|)", r"\n\n\1", t)
+    
     # Collapse excessive blank lines
     t = re.sub(r"\n{3,}", "\n\n", t)
     return t
@@ -363,32 +364,54 @@ def normalize_markdown(text: str) -> str:
 def paragraphize_analysis(text: str, max_sentences: int = 5) -> str:
     """Language-agnostic paragraphing for Analysis.
     - Respects existing blank-line breaks
-    - Avoids touching lists (bullets/numbered)
+    - Avoids touching lists (bullets/numbered) or tables
     - Groups N sentences per paragraph
+    - Strips outer bolding from entire sections
     """
     if not isinstance(text, str):
         return ""
-    t = text.replace("\r\n", "\n").replace("\r", "\n").strip()
-    # If there are bullets or numbered list lines, keep as-is
-    if re.search(r"^(\*|\d+\.)\s", t, flags=re.MULTILINE):
-        return re.sub(r"\n{3,}", "\n\n", t)
-    # Already paragraphized
-    if "\n\n" in t:
-        return re.sub(r"\n{3,}", "\n\n", t)
-    # Split on sentence boundaries; broad for multiple languages
-    sentences = re.split(r"(?<=[\.!?。！？])\s+", t)
-    buf, paras = [], []
-    for s in sentences:
-        s = s.strip()
-        if not s:
+    
+    # Strip hallucinated outer bolding (if the whole section is wrapped)
+    t = text.strip()
+    if len(t) > 200 and t.startswith("**") and t.endswith("**"):
+        t = t[2:-2].strip()
+        
+    t = t.replace("\r\n", "\n").replace("\r", "\n").strip()
+    
+    # Split by existing blocks
+    blocks = t.split("\n\n")
+    final_blocks = []
+    
+    for block in blocks:
+        block = block.strip()
+        if not block:
             continue
-        buf.append(s)
-        if len(buf) >= max_sentences:
-            paras.append(" ".join(buf))
-            buf = []
-    if buf:
-        paras.append(" ".join(buf))
-    return "\n\n".join(paras)
+            
+        # If block contains list/table markers at start of ANY line, keep as-is
+        if re.search(r"^(\*|\d+\.|\s*\||\s*\-\-\-)", block, flags=re.MULTILINE):
+            final_blocks.append(block)
+            continue
+            
+        # Already short enough
+        sentences = re.split(r"(?<=[\.!?。！？])\s+", block)
+        if len(sentences) <= max_sentences:
+            final_blocks.append(block)
+            continue
+            
+        # Regroup into smaller paragraphs
+        buf = []
+        for s in sentences:
+            s = s.strip()
+            if not s:
+                continue
+            buf.append(s)
+            if len(buf) >= max_sentences:
+                final_blocks.append(" ".join(buf))
+                buf = []
+        if buf:
+            final_blocks.append(" ".join(buf))
+            
+    return "\n\n".join(final_blocks)
 
 # Drafting function with retry logic and deep research support
 def draft_answer(
